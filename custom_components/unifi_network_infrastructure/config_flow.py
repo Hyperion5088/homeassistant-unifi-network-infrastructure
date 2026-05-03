@@ -1,4 +1,4 @@
-"""Config flow for UniFi Infrastructure."""
+"""Config flow for UniFi Network Infrastructure."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def _setup_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
 
 
 class UniFiInfrastructureConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for UniFi Infrastructure."""
+    """Handle a config flow for UniFi Network Infrastructure."""
 
     VERSION = 1
 
@@ -74,7 +74,7 @@ class UniFiInfrastructureConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 await client.async_logout()
                 return self.async_create_entry(
-                    title=f"UniFi Infrastructure ({site})",
+                    title=f"UniFi Network Infrastructure ({site})",
                     data={**user_input, CONF_HOST: host, CONF_SITE: site},
                     options={CONF_SCAN_INTERVAL: user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS)},
                     description_placeholders={"device_count": str(summary["device_count"])},
@@ -93,7 +93,7 @@ class UniFiInfrastructureConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class UniFiInfrastructureOptionsFlow(config_entries.OptionsFlow):
-    """Options flow for UniFi Infrastructure."""
+    """Options flow for UniFi Network Infrastructure."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""

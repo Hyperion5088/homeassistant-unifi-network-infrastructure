@@ -1,10 +1,10 @@
-"""Constants for the UniFi Infrastructure integration."""
+"""Constants for the UniFi Network Infrastructure integration."""
 
 from __future__ import annotations
 
 from datetime import timedelta
 
-DOMAIN = "unifi_infrastructure"
+DOMAIN = "unifi_network_infrastructure"
 
 CONF_SITE = "site"
 CONF_VERIFY_SSL = "verify_ssl"

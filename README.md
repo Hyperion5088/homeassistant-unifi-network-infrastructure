@@ -1,8 +1,8 @@
-# UniFi Infrastructure for Home Assistant
+# UniFi Network Infrastructure for Home Assistant
 
 Home Assistant integration for UniFi Network hardware only.
 
-This integration is intentionally narrower than the built-in UniFi Network integration. It is designed to expose adopted UniFi infrastructure devices without creating Home Assistant devices or entities for ordinary network clients.
+This integration is intentionally limited to UniFi Network. It does not integrate UniFi Protect, UniFi Access, UniFi Talk, UniFi Connect, or other UniFi applications. It is designed to expose adopted UniFi Network infrastructure devices without creating Home Assistant devices or entities for ordinary network clients.
 
 ## Status
 
@@ -56,14 +56,14 @@ Not included yet:
 
 Add this repository to HACS as an integration repository once it has been published:
 
-- Repository: `https://github.com/Hyperion5088/homeassistant-unifi-infrastructure`
+- Repository: `https://github.com/Hyperion5088/homeassistant-unifi-network-infrastructure`
 - Category: `Integration`
 
-Then install `UniFi Infrastructure`, restart Home Assistant, and add the integration from Settings > Devices & services.
+Then install `UniFi Network Infrastructure`, restart Home Assistant, and add the integration from Settings > Devices & services.
 
 ### Manual
 
-Copy `custom_components/unifi_infrastructure` to your Home Assistant `custom_components` directory, restart Home Assistant, then add the integration from Settings > Devices & services.
+Copy `custom_components/unifi_network_infrastructure` to your Home Assistant `custom_components` directory, restart Home Assistant, then add the integration from Settings > Devices & services.
 
 ## Configuration
 

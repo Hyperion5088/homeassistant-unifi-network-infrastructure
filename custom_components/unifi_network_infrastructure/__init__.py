@@ -1,4 +1,4 @@
-"""UniFi Infrastructure integration."""
+"""UniFi Network Infrastructure integration."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ DEFAULT_DISABLED_SENSOR_SUFFIXES = frozenset(
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up UniFi Infrastructure from a config entry."""
+    """Set up UniFi Network Infrastructure from a config entry."""
     hass.data.setdefault(DOMAIN, {})
     verify_ssl = entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
     session = async_get_clientsession(hass, verify_ssl=verify_ssl)
@@ -107,7 +107,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a UniFi Infrastructure config entry."""
+    """Unload a UniFi Network Infrastructure config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id, None)

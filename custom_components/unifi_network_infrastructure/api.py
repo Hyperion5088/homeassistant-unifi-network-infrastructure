@@ -10,7 +10,7 @@ from .const import UNIFI_HARDWARE_TYPES
 
 
 class UniFiInfrastructureError(Exception):
-    """Base error for UniFi Infrastructure."""
+    """Base error for UniFi Network Infrastructure."""
 
 
 class UniFiInfrastructureAuthError(UniFiInfrastructureError):

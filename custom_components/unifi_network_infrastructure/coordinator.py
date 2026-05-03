@@ -1,4 +1,4 @@
-"""Coordinator for UniFi Infrastructure."""
+"""Coordinator for UniFi Network Infrastructure."""
 
 from __future__ import annotations
 

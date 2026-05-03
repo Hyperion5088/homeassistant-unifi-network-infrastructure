@@ -1,4 +1,4 @@
-"""Diagnostics for UniFi Infrastructure."""
+"""Diagnostics for UniFi Network Infrastructure."""
 
 from __future__ import annotations
 

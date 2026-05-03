@@ -1,4 +1,4 @@
-"""Sensors for UniFi Infrastructure."""
+"""Sensors for UniFi Network Infrastructure."""
 
 from __future__ import annotations
 
@@ -724,7 +724,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up UniFi Infrastructure sensors."""
+    """Set up UniFi Network Infrastructure sensors."""
     coordinator: UniFiInfrastructureCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[UniFiInfrastructureSensor] = []
     for device in coordinator.data.devices.values():

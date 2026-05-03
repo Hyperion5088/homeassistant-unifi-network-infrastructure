@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "UniFi Infrastructure",
+        "title": "UniFi Network Infrastructure",
         "description": "Connect to a local UniFi Network controller and import adopted UniFi hardware only. This integration does not create client trackers.",
         "data": {
           "host": "Host",
@@ -26,7 +26,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "UniFi Infrastructure Options",
+        "title": "UniFi Network Infrastructure Options",
         "data": {
           "scan_interval": "Polling interval in seconds"
         }

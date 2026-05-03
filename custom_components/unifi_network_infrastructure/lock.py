@@ -1,4 +1,4 @@
-"""Lock entities for UniFi Infrastructure guarded controls."""
+"""Lock entities for UniFi Network Infrastructure guarded controls."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up UniFi Infrastructure lock entities."""
+    """Set up UniFi Network Infrastructure lock entities."""
     coordinator: UniFiInfrastructureCoordinator = hass.data[DOMAIN][entry.entry_id]
     known_ports: set[str] = set()
 

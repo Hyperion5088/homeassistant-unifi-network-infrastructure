@@ -1,4 +1,4 @@
-"""Switch controls for UniFi Infrastructure."""
+"""Switch controls for UniFi Network Infrastructure."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up UniFi Infrastructure switch controls."""
+    """Set up UniFi Network Infrastructure switch controls."""
     coordinator: UniFiInfrastructureCoordinator = hass.data[DOMAIN][entry.entry_id]
     known_wlans: set[str] = set()
     known_port_forwards: set[str] = set()

@@ -83,7 +83,7 @@ The integration uses the local UniFi OS login endpoint and then polls:
 
 It deliberately avoids client/device-tracker endpoints.
 
-Device display names are shortened during import by removing DNS suffixes from hostname-like values. For example, `NET-ROUTER-01.my-net.co.uk` is shown as `NET-ROUTER-01`. Unique IDs still come from stable controller identifiers such as `_id`, serial, or MAC address.
+Device display names are shortened during import by removing DNS suffixes from hostname-like values. For example, `gateway-01.example.com` is shown as `gateway-01`. Unique IDs still come from stable controller identifiers such as `_id`, serial, or MAC address.
 
 SSID controls poll the UniFi WLAN configuration endpoint and create switch entities dynamically:
 

@@ -176,6 +176,8 @@ def _async_migrate_entity_ids(
             _async_migrate_lock_entity_id(registry, entity, coordinator)
             continue
         if entity.entity_id.startswith("switch."):
+            if _async_migrate_port_forward_switch_entity_id(registry, entity, coordinator):
+                continue
             _async_migrate_wlan_switch_entity_id(registry, entity, coordinator)
             continue
         if _async_migrate_wan_sensor_entity_id(registry, entity, coordinator):
@@ -253,12 +255,42 @@ def _async_migrate_wlan_switch_entity_id(
     router = coordinator.data.devices.get(router_key) if router_key is not None else None
     if wlan is None or router is None:
         return
-    desired_name = f"SSID {wlan.name}"
-    desired_entity_id = f"switch.{slugify(router.name)}_ssid_{slugify(wlan.name)}"
+    if wlan.is_guest is True:
+        desired_name = f"Guest Network {wlan.name}"
+        desired_entity_id = f"switch.{slugify(router.name)}_guest_network_{slugify(wlan.name)}"
+    else:
+        desired_name = f"SSID {wlan.name}"
+        desired_entity_id = f"switch.{slugify(router.name)}_ssid_{slugify(wlan.name)}"
     updates: dict[str, object | None] = {"original_name": desired_name}
     if entity.entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
         updates["new_entity_id"] = desired_entity_id
     registry.async_update_entity(entity.entity_id, **updates)
+
+
+def _async_migrate_port_forward_switch_entity_id(
+    registry: er.EntityRegistry,
+    entity: er.RegistryEntry,
+    coordinator: UniFiInfrastructureCoordinator,
+) -> bool:
+    """Shorten port-forward switch entity IDs."""
+    unique_id = str(entity.unique_id or "")
+    prefix = "port_forward_"
+    suffix = "_enabled"
+    if not unique_id.startswith(prefix) or not unique_id.endswith(suffix):
+        return False
+    rule_id = unique_id[len(prefix) : -len(suffix)]
+    rule = coordinator.data.port_forwards.get(rule_id)
+    router_key = coordinator.data.router_device_key
+    router = coordinator.data.devices.get(router_key) if router_key is not None else None
+    if rule is None or router is None:
+        return True
+    desired_name = f"Port Forward {rule.name}"
+    desired_entity_id = f"switch.{slugify(router.name)}_port_forward_{slugify(rule.name)}"
+    updates: dict[str, object | None] = {"original_name": desired_name}
+    if entity.entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
+        updates["new_entity_id"] = desired_entity_id
+    registry.async_update_entity(entity.entity_id, **updates)
+    return True
 
 
 def _async_migrate_device_names(

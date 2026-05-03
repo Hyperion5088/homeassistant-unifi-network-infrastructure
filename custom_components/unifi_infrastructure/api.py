@@ -110,12 +110,33 @@ class UniFiInfrastructureClient:
             raise UniFiInfrastructureError("Unexpected UniFi WLAN response")
         return [wlan for wlan in raw_wlans if isinstance(wlan, dict)]
 
+    async def async_get_port_forwards(self) -> list[dict[str, Any]]:
+        """Return UniFi port-forward rules."""
+        payload = await self._request_json("GET", f"/proxy/network/api/s/{self.site}/rest/portforward")
+        raw_rules = payload.get("data", payload if isinstance(payload, list) else [])
+        if not isinstance(raw_rules, list):
+            raise UniFiInfrastructureError("Unexpected UniFi port-forward response")
+        return [rule for rule in raw_rules if isinstance(rule, dict)]
+
     async def async_set_wlan_enabled(self, wlan_id: str, enabled: bool) -> None:
         """Enable or disable a WLAN/SSID."""
         await self._request_json(
             "PUT",
             f"/proxy/network/api/s/{self.site}/rest/wlanconf/{wlan_id}",
             json_data={"enabled": enabled},
+        )
+
+    async def async_set_port_forward_enabled(self, rule: dict[str, Any], enabled: bool) -> None:
+        """Enable or disable a port-forward rule without altering other fields."""
+        rule_id = rule.get("_id") or rule.get("id")
+        if rule_id in (None, ""):
+            raise UniFiInfrastructureError("Cannot update port-forward rule without an ID")
+        payload = dict(rule)
+        payload["enabled"] = enabled
+        await self._request_json(
+            "PUT",
+            f"/proxy/network/api/s/{self.site}/rest/portforward/{rule_id}",
+            json_data=payload,
         )
 
     async def _request_json(self, method: str, path: str, json_data: dict[str, Any] | None = None) -> Any:

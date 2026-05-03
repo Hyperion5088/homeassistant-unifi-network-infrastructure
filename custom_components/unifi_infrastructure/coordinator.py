@@ -67,6 +67,7 @@ class UniFiInfrastructureData:
     ports: dict[str, UniFiPort]
     wans: dict[str, "UniFiWan"]
     wlans: dict[str, "UniFiWlan"]
+    port_forwards: dict[str, "UniFiPortForward"]
     router_device_key: str | None
 
 
@@ -95,6 +96,22 @@ class UniFiWlan:
     security: str | None
     band: str | None
     is_guest: bool | None
+    raw: dict[str, Any]
+
+
+@dataclass(slots=True)
+class UniFiPortForward:
+    """Normalized UniFi port-forward rule."""
+
+    key: str
+    name: str
+    enabled: bool | None
+    protocol: str | None
+    source: str | None
+    destination: str | None
+    destination_port: str | None
+    forward_ip: str | None
+    forward_port: str | None
     raw: dict[str, Any]
 
 
@@ -156,6 +173,7 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
         try:
             devices = await self.client.async_get_devices()
             wlans = await self.client.async_get_wlans()
+            port_forwards = await self.client.async_get_port_forwards()
         except UniFiInfrastructureError as err:
             raise UpdateFailed(str(err)) from err
         normalized = [_normalize_device(device) for device in devices]
@@ -163,18 +181,31 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
         for wlan in wlans:
             if (normalized_wlan := _normalize_wlan(wlan)) is not None:
                 normalized_wlans.append(normalized_wlan)
+        normalized_port_forwards: list[UniFiPortForward] = []
+        for rule in port_forwards:
+            if (normalized_rule := _normalize_port_forward(rule)) is not None:
+                normalized_port_forwards.append(normalized_rule)
         device_map = {device.key: device for device in normalized}
         return UniFiInfrastructureData(
             devices=device_map,
             ports=_normalize_ports(normalized),
             wans=_normalize_wans(normalized),
             wlans={wlan.key: wlan for wlan in normalized_wlans},
+            port_forwards={rule.key: rule for rule in normalized_port_forwards},
             router_device_key=_router_device_key(device_map),
         )
 
     async def async_set_wlan_enabled(self, wlan_id: str, enabled: bool) -> None:
         """Enable or disable a WLAN/SSID and refresh data."""
         await self.client.async_set_wlan_enabled(wlan_id, enabled)
+        await self.async_request_refresh()
+
+    async def async_set_port_forward_enabled(self, rule_id: str, enabled: bool) -> None:
+        """Enable or disable a port-forward rule and refresh data."""
+        rule = self.data.port_forwards.get(rule_id) if self.data is not None else None
+        if rule is None:
+            raise UniFiInfrastructureError("Port-forward rule is no longer available")
+        await self.client.async_set_port_forward_enabled(rule.raw, enabled)
         await self.async_request_refresh()
 
     def is_port_locked(self, port_key: str) -> bool:
@@ -488,6 +519,27 @@ def _normalize_wlan(wlan: dict[str, Any]) -> UniFiWlan | None:
         band=_first_string(wlan, "wlan_band"),
         is_guest=wlan.get("is_guest") if isinstance(wlan.get("is_guest"), bool) else None,
         raw=wlan,
+    )
+
+
+def _normalize_port_forward(rule: dict[str, Any]) -> UniFiPortForward | None:
+    """Normalize a UniFi port-forward rule."""
+    key = _first_string(rule, "_id", "id")
+    if key is None:
+        return None
+    name = _first_string(rule, "name", "description", "dst_port", "fwd_port") or key
+    enabled = rule.get("enabled")
+    return UniFiPortForward(
+        key=key,
+        name=name,
+        enabled=enabled if isinstance(enabled, bool) else None,
+        protocol=_first_string(rule, "proto", "protocol"),
+        source=_first_string(rule, "src", "src_ip", "src_address"),
+        destination=_first_string(rule, "dst", "dst_ip", "dst_address"),
+        destination_port=_first_string(rule, "dst_port", "dst_ports", "dst_port_start"),
+        forward_ip=_first_string(rule, "fwd", "fwd_ip", "forward_ip"),
+        forward_port=_first_string(rule, "fwd_port", "forward_port"),
+        raw=rule,
     )
 
 

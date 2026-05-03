@@ -17,7 +17,8 @@ Current scope:
 - per-port speed sensors for UniFi switches and gateways, with link/admin/PoE/LLDP/protection details exposed as attributes
 - access point radio and VAP count sensors where the controller exposes radio inventory
 - fan sensors only when the controller exposes concrete fan level or fan table data
-- SSID enable/disable controls exposed as switch entities on the UniFi router/controller device
+- SSID enable/disable controls exposed as switch entities on the UniFi router/controller device, with guest WLAN rows labelled as guest networks when UniFi marks them that way
+- port-forward rule enable/disable controls exposed as switch entities on the UniFi router/controller device
 - switch and gateway port configuration protection locks, including router WAN uplinks when the controller exposes the WAN port mapping
 - internal/controller-facing gateway IP sensors plus separate WAN IP sensors for each detected internet uplink
 - no `device_tracker` platform
@@ -93,6 +94,14 @@ SSID controls poll the UniFi WLAN configuration endpoint and create switch entit
 - `PUT /proxy/network/api/s/<site>/rest/wlanconf/<wlan_id>`
 
 If a new WLAN/SSID is added later, the integration creates the matching switch on a future poll without reinstalling the integration.
+When UniFi marks a WLAN row as guest, the switch is named as a guest network rather than a generic SSID.
+
+Port-forward controls poll the UniFi port-forward endpoint and create switch entities dynamically:
+
+- `GET /proxy/network/api/s/<site>/rest/portforward`
+- `PUT /proxy/network/api/s/<site>/rest/portforward/<rule_id>`
+
+Port-forward writes preserve the existing rule payload and only change the `enabled` field.
 
 Per-AP SSID control is intentionally out of scope for now.
 

@@ -83,13 +83,31 @@ def _async_migrate_entity_ids(
     registry = er.async_get(hass)
     names_by_suffix = {
         "state": "State",
+        "ip_address": "IP Address",
+        "mac_address": "MAC Address",
+        "serial_number": "Serial Number",
+        "model": "Model",
         "cpu_usage": "CPU Usage",
         "memory_usage": "Memory Usage",
         "temperature": "Temperature",
+        "fan_level": "Fan Level",
+        "fan_summary": "Fan Summary",
         "uptime": "Uptime",
+        "last_seen": "Last Seen",
+        "load_average_1_min": "Load Average 1 min",
+        "load_average_5_min": "Load Average 5 min",
+        "load_average_15_min": "Load Average 15 min",
         "firmware": "Firmware",
         "update_status": "Update Status",
+        "port_count": "Port Count",
+        "radio_count": "Radio Count",
+        "vap_count": "VAP Count",
         "connected_clients": "Connected Clients",
+        "rx_bytes": "RX Bytes",
+        "tx_bytes": "TX Bytes",
+        "total_bytes": "Total Bytes",
+        "uplink": "Uplink",
+        "radio_summary": "Radio Summary",
     }
     for entity in list(registry.entities.values()):
         if entity.config_entry_id != entry.entry_id or entity.platform != DOMAIN:

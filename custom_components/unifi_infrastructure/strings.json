@@ -38,6 +38,18 @@
       "state": {
         "name": "State"
       },
+      "ip_address": {
+        "name": "IP Address"
+      },
+      "mac_address": {
+        "name": "MAC Address"
+      },
+      "serial_number": {
+        "name": "Serial Number"
+      },
+      "model": {
+        "name": "Model"
+      },
       "cpu_usage": {
         "name": "CPU Usage"
       },
@@ -47,8 +59,26 @@
       "temperature": {
         "name": "Temperature"
       },
+      "fan_level": {
+        "name": "Fan Level"
+      },
+      "fan_summary": {
+        "name": "Fan Summary"
+      },
       "uptime": {
         "name": "Uptime"
+      },
+      "last_seen": {
+        "name": "Last Seen"
+      },
+      "load_average_1_min": {
+        "name": "Load Average 1 min"
+      },
+      "load_average_5_min": {
+        "name": "Load Average 5 min"
+      },
+      "load_average_15_min": {
+        "name": "Load Average 15 min"
       },
       "firmware": {
         "name": "Firmware"
@@ -56,8 +86,32 @@
       "update_status": {
         "name": "Update Status"
       },
+      "port_count": {
+        "name": "Port Count"
+      },
+      "radio_count": {
+        "name": "Radio Count"
+      },
+      "vap_count": {
+        "name": "VAP Count"
+      },
       "connected_clients": {
         "name": "Connected Clients"
+      },
+      "rx_bytes": {
+        "name": "RX Bytes"
+      },
+      "tx_bytes": {
+        "name": "TX Bytes"
+      },
+      "total_bytes": {
+        "name": "Total Bytes"
+      },
+      "uplink": {
+        "name": "Uplink"
+      },
+      "radio_summary": {
+        "name": "Radio Summary"
       }
     }
   }

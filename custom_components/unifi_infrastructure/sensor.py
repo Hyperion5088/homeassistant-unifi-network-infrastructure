@@ -4,11 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfTemperature
+from homeassistant.const import PERCENTAGE, UnitOfInformation, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -24,6 +30,24 @@ class UniFiSensorDescription(SensorEntityDescription):
 
     value_fn: Callable[[UniFiDevice], Any]
     attr_fn: Callable[[UniFiDevice], dict[str, Any]] | None = None
+    device_kinds: frozenset[str] | None = None
+
+
+INFRASTRUCTURE_KINDS = frozenset({"udm", "ugw", "usw", "uap"})
+SWITCH_KINDS = frozenset({"usw"})
+AP_KINDS = frozenset({"uap"})
+GATEWAY_KINDS = frozenset({"udm", "ugw"})
+STATE_OPTIONS = [
+    "offline",
+    "online",
+    "pending_adoption",
+    "adopting",
+    "provisioning",
+    "upgrading",
+    "disabled",
+    "isolated",
+    "unknown",
+]
 
 
 def _raw_value(device: UniFiDevice, *keys: str) -> Any:
@@ -58,10 +82,15 @@ def _number(device: UniFiDevice, *keys: str) -> int | float | None:
     return None
 
 
+def _int(device: UniFiDevice, *keys: str) -> int | None:
+    """Return an integer raw device value."""
+    value = _number(device, *keys)
+    return int(value) if value is not None else None
+
+
 def _uptime_seconds(device: UniFiDevice) -> int | None:
     """Return uptime seconds."""
-    value = _number(device, "uptime")
-    return int(value) if value is not None else None
+    return _int(device, "uptime")
 
 
 def _uptime_display(device: UniFiDevice) -> str | None:
@@ -83,8 +112,135 @@ def _temperature(device: UniFiDevice) -> int | float | None:
 
 def _client_count(device: UniFiDevice) -> int | None:
     """Return aggregate connected client count only."""
-    value = _number(device, "num_sta", "user-num_sta", "guest-num_sta")
-    return int(value) if value is not None else None
+    return _int(device, "num_sta", "user-num_sta", "guest-num_sta")
+
+
+def _port_count(device: UniFiDevice) -> int | None:
+    """Return the number of physical ports reported by the controller."""
+    ports = device.raw.get("port_table")
+    if isinstance(ports, list) and ports:
+        return len(ports)
+    ethernet = device.raw.get("ethernet_table")
+    if isinstance(ethernet, list) and device.kind in GATEWAY_KINDS:
+        return len(ethernet)
+    return None
+
+
+def _ap_radio_count(device: UniFiDevice) -> int | None:
+    """Return access point radio count."""
+    radios = device.raw.get("radio_table")
+    if isinstance(radios, list):
+        return len(radios)
+    return None
+
+
+def _ap_vap_count(device: UniFiDevice) -> int | None:
+    """Return access point VAP count."""
+    vaps = device.raw.get("vap_table")
+    if isinstance(vaps, list):
+        return len(vaps)
+    return None
+
+
+def _last_seen(device: UniFiDevice) -> datetime | None:
+    """Return last seen timestamp."""
+    value = _int(device, "last_seen")
+    if value is None:
+        return None
+    return datetime.fromtimestamp(value, UTC)
+
+
+def _fan_level(device: UniFiDevice) -> int | float | None:
+    """Return fan level when UniFi exposes a concrete value."""
+    if device.raw.get("has_fan") is not True:
+        return None
+    return _number(device, "fan_level")
+
+
+def _fan_summary(device: UniFiDevice) -> str | None:
+    """Return fan status/speed summary when concrete data is available."""
+    fan = device.raw.get("fan")
+    if isinstance(fan, str) and fan:
+        return fan
+    table = device.raw.get("fan_table")
+    if not isinstance(table, list) or not table:
+        return None
+    parts: list[str] = []
+    for index, row in enumerate(table, start=1):
+        if not isinstance(row, dict):
+            continue
+        name = row.get("name") or row.get("id") or index
+        speed = row.get("rpm") or row.get("speed") or row.get("value")
+        state = row.get("state") or row.get("status")
+        if speed not in (None, ""):
+            parts.append(f"{name}: {speed} rpm")
+        elif state not in (None, ""):
+            parts.append(f"{name}: {state}")
+    return " | ".join(parts) if parts else None
+
+
+def _device_state(device: UniFiDevice) -> str:
+    """Return normalized device state for an enum sensor."""
+    raw_state = device.raw.get("state")
+    if device.raw.get("disabled") is True:
+        return "disabled"
+    if device.raw.get("connected") is False:
+        return "offline"
+    if raw_state in (1, "1"):
+        return "online"
+    if raw_state in (0, "0"):
+        return "offline"
+    if raw_state in (2, "2"):
+        return "pending_adoption"
+    if raw_state in (3, "3"):
+        return "adopting"
+    if raw_state in (4, "4"):
+        return "provisioning"
+    if raw_state in (5, "5"):
+        return "upgrading"
+    if raw_state in (6, "6"):
+        return "isolated"
+    if device.state in STATE_OPTIONS:
+        return device.state
+    return "unknown"
+
+
+def _state_attrs(device: UniFiDevice) -> dict[str, Any]:
+    """Return state attributes with raw controller state retained."""
+    attrs = _device_attrs(device)
+    attrs["raw_state"] = device.raw.get("state")
+    return {key: value for key, value in attrs.items() if value not in (None, "")}
+
+
+def _uplink_summary(device: UniFiDevice) -> str | None:
+    """Return a compact uplink summary."""
+    uplink = device.raw.get("uplink")
+    if not isinstance(uplink, dict):
+        return None
+    parts = [
+        uplink.get("uplink_device_name"),
+        uplink.get("name"),
+        f"port {uplink['uplink_remote_port']}" if uplink.get("uplink_remote_port") is not None else None,
+    ]
+    return " / ".join(str(part) for part in parts if part not in (None, ""))
+
+
+def _uplink_attrs(device: UniFiDevice) -> dict[str, Any] | None:
+    """Return useful uplink details."""
+    uplink = device.raw.get("uplink")
+    if not isinstance(uplink, dict):
+        return None
+    attrs = {
+        "type": uplink.get("type"),
+        "name": uplink.get("name"),
+        "uplink_mac": uplink.get("uplink_mac"),
+        "uplink_device_name": uplink.get("uplink_device_name"),
+        "uplink_remote_port": uplink.get("uplink_remote_port"),
+        "speed_mbps": uplink.get("speed"),
+        "tx_bytes": uplink.get("tx_bytes"),
+        "rx_bytes": uplink.get("rx_bytes"),
+    }
+    return {key: value for key, value in attrs.items() if value not in (None, "")}
 
 
 def _update_state(device: UniFiDevice) -> str:
@@ -107,13 +263,61 @@ def _device_attrs(device: UniFiDevice) -> dict[str, Any]:
     return {key: value for key, value in attrs.items() if value not in (None, "")}
 
 
+def _radio_attrs(device: UniFiDevice) -> dict[str, Any] | None:
+    """Return access point radio details."""
+    radios = device.raw.get("radio_table")
+    if not isinstance(radios, list):
+        return None
+    attrs: dict[str, Any] = {}
+    for index, radio in enumerate(radios, start=1):
+        if not isinstance(radio, dict):
+            continue
+        radio_name = radio.get("name") or radio.get("radio") or radio.get("radio_name") or f"radio_{index}"
+        prefix = str(radio_name).lower().replace(" ", "_")
+        for key in ("channel", "ht", "tx_power", "radio", "name", "radio_name"):
+            value = radio.get(key)
+            if value not in (None, ""):
+                attrs[f"{prefix}_{key}"] = value
+    return attrs or None
+
+
 SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     UniFiSensorDescription(
         key="state",
         name="State",
         translation_key="state",
-        value_fn=lambda device: device.state,
-        attr_fn=_device_attrs,
+        device_class=SensorDeviceClass.ENUM,
+        options=STATE_OPTIONS,
+        value_fn=_device_state,
+        attr_fn=_state_attrs,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
+        key="ip_address",
+        name="IP Address",
+        translation_key="ip_address",
+        value_fn=lambda device: device.ip,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
+        key="mac_address",
+        name="MAC Address",
+        translation_key="mac_address",
+        value_fn=lambda device: device.mac,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
+        key="serial_number",
+        name="Serial Number",
+        translation_key="serial_number",
+        value_fn=lambda device: device.serial,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
+        key="model",
+        name="Model",
+        translation_key="model",
+        value_fn=lambda device: device.model,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
@@ -142,10 +346,54 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
+        key="fan_level",
+        name="Fan Level",
+        translation_key="fan_level",
+        native_unit_of_measurement=PERCENTAGE,
+        value_fn=_fan_level,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
+        key="fan_summary",
+        name="Fan Summary",
+        translation_key="fan_summary",
+        value_fn=_fan_summary,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
         key="uptime",
         name="Uptime",
         translation_key="uptime",
         value_fn=_uptime_display,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
+        key="last_seen",
+        name="Last Seen",
+        translation_key="last_seen",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=_last_seen,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
+        key="load_average_1_min",
+        name="Load Average 1 min",
+        translation_key="load_average_1_min",
+        value_fn=lambda device: _number(device, "sys_stats.loadavg_1"),
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
+        key="load_average_5_min",
+        name="Load Average 5 min",
+        translation_key="load_average_5_min",
+        value_fn=lambda device: _number(device, "sys_stats.loadavg_5"),
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
+        key="load_average_15_min",
+        name="Load Average 15 min",
+        translation_key="load_average_15_min",
+        value_fn=lambda device: _number(device, "sys_stats.loadavg_15"),
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
@@ -163,10 +411,81 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
+        key="port_count",
+        name="Port Count",
+        translation_key="port_count",
+        value_fn=_port_count,
+        device_kinds=SWITCH_KINDS | GATEWAY_KINDS,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
+        key="radio_count",
+        name="Radio Count",
+        translation_key="radio_count",
+        value_fn=_ap_radio_count,
+        device_kinds=AP_KINDS,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
+        key="vap_count",
+        name="VAP Count",
+        translation_key="vap_count",
+        value_fn=_ap_vap_count,
+        device_kinds=AP_KINDS,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
         key="connected_clients",
         name="Connected Clients",
         translation_key="connected_clients",
         value_fn=_client_count,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
+        key="rx_bytes",
+        name="RX Bytes",
+        translation_key="rx_bytes",
+        device_class=SensorDeviceClass.DATA_SIZE,
+        native_unit_of_measurement=UnitOfInformation.BYTES,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_fn=lambda device: _number(device, "rx_bytes"),
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
+        key="tx_bytes",
+        name="TX Bytes",
+        translation_key="tx_bytes",
+        device_class=SensorDeviceClass.DATA_SIZE,
+        native_unit_of_measurement=UnitOfInformation.BYTES,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_fn=lambda device: _number(device, "tx_bytes"),
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
+        key="total_bytes",
+        name="Total Bytes",
+        translation_key="total_bytes",
+        device_class=SensorDeviceClass.DATA_SIZE,
+        native_unit_of_measurement=UnitOfInformation.BYTES,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_fn=lambda device: _number(device, "bytes"),
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
+        key="uplink",
+        name="Uplink",
+        translation_key="uplink",
+        value_fn=_uplink_summary,
+        attr_fn=_uplink_attrs,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    UniFiSensorDescription(
+        key="radio_summary",
+        name="Radio Summary",
+        translation_key="radio_summary",
+        value_fn=lambda device: _ap_radio_count(device),
+        attr_fn=lambda device: _radio_attrs(device) or {},
+        device_kinds=AP_KINDS,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
 )
@@ -184,7 +503,8 @@ async def async_setup_entry(
         entities.extend(
             UniFiInfrastructureSensor(coordinator, device.key, description)
             for description in SENSOR_DESCRIPTIONS
-            if description.value_fn(device) is not None
+            if (description.device_kinds is None or device.kind in description.device_kinds)
+            and description.value_fn(device) is not None
         )
     async_add_entities(entities)
 

@@ -6,13 +6,16 @@ This integration is intentionally narrower than the built-in UniFi Network integ
 
 ## Status
 
-This repository is an early V0 development build.
+This repository is an early V1 development build.
 
 Current scope:
 
 - local UniFi OS / UniFi Network login
 - adopted UniFi gateway, switch, and access point inventory from the UniFi Network controller
-- read-only device state, firmware, uptime, CPU, memory, temperature, IP, MAC, and client-count summary sensors where the controller exposes them
+- read-only device state, identity, firmware, uptime, CPU, memory, temperature, load average, traffic, uplink, and client-count summary sensors where the controller exposes them
+- switch/gateway port count sensors where the controller exposes port inventory
+- access point radio and VAP count sensors where the controller exposes radio inventory
+- fan sensors only when the controller exposes concrete fan level or fan table data
 - no `device_tracker` platform
 - no ordinary network-client devices
 - diagnostics with credentials redacted

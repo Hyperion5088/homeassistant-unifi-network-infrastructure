@@ -27,7 +27,7 @@
       },
       "control_options": {
         "title": "Choose UniFi Entities And Controls",
-        "description": "Choose the monitoring and control families Home Assistant should create.\n\nRead-only UniFi accounts can still add monitoring entities, but write-control sections are hidden automatically.",
+        "description": "Choose the monitoring and control families Home Assistant should create.\n\nDetected permission mode: {permission_mode}. Read-only UniFi accounts can still add monitoring entities, but write-control options are shown as read-only for awareness.",
         "sections": {
           "monitoring_settings": {
             "name": "Monitoring",
@@ -120,7 +120,7 @@
     "step": {
       "init": {
         "title": "UniFi Network Infrastructure Options",
-        "description": "Update the UniFi controller connection and choose which entity families Home Assistant should expose.\n\nWrite-control options are shown as read-only when the configured account appears to be read-only.",
+        "description": "Update the UniFi controller connection and choose which entity families Home Assistant should expose.\n\nDetected permission mode: {permission_mode}. Write-control options are shown as read-only when the configured account appears to be read-only.",
         "sections": {
           "controller_settings": {
             "name": "UniFi Controller",

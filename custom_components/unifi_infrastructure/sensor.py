@@ -20,7 +20,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import UniFiDevice, UniFiInfrastructureCoordinator, UniFiWan
+from .coordinator import UniFiDevice, UniFiInfrastructureCoordinator, UniFiPort, UniFiWan
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -385,6 +385,115 @@ def _traffic_attrs(device: UniFiDevice, direction: str, *keys: str) -> dict[str,
     }
 
 
+def _port_speed_value(port: UniFiPort) -> str:
+    """Return the port speed as a readable state."""
+    if port.up is False:
+        return "Down"
+    if port.speed_mbps is None:
+        return "Unknown"
+    if port.speed_mbps >= 1000:
+        gbps = port.speed_mbps / 1000
+        return f"{gbps:g} Gbps"
+    return f"{port.speed_mbps} Mbps"
+
+
+def _port_attrs(port: UniFiPort, device: UniFiDevice | None, coordinator: UniFiInfrastructureCoordinator) -> dict[str, Any]:
+    """Return detailed port attributes."""
+    raw = port.raw
+    attrs = {
+        "device": device.name if device is not None else port.device_key,
+        "port": port.name,
+        "port_idx": port.port_idx,
+        "enabled": port.enabled,
+        "link_up": port.up,
+        "speed_mbps": port.speed_mbps,
+        "poe_enabled": port.poe_enabled,
+        "poe_capable": _port_bool(raw, "poe_caps", "poe_capable", "is_poe"),
+        "poe_power_w": _port_poe_power_w(raw),
+        "poe_mode": _port_value(raw, "poe_mode", "poe_caps", "port_poe"),
+        "media": _port_value(raw, "media", "media_type", "port_type", "type"),
+        "full_duplex": _port_bool(raw, "full_duplex"),
+        "is_uplink": port.is_uplink,
+        "protection_reasons": list(port.protection_reasons),
+        "auto_protected": coordinator.is_port_auto_protected(port.key),
+        "protected": coordinator.is_port_locked(port.key),
+        "admin_control_allowed": coordinator.can_change_port(port.key),
+        "rx_bytes": _port_number(raw, "rx_bytes"),
+        "tx_bytes": _port_number(raw, "tx_bytes"),
+        "lldp_neighbors": _port_lldp_neighbors(port, device),
+    }
+    return {key: value for key, value in attrs.items() if value not in (None, "", [])}
+
+
+def _port_value(port: dict[str, Any], *keys: str) -> Any:
+    """Return the first populated raw port value."""
+    for key in keys:
+        value = port.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _port_number(port: dict[str, Any], *keys: str) -> int | float | None:
+    """Return the first numeric raw port value."""
+    value = _port_value(port, *keys)
+    if isinstance(value, int | float):
+        return value
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _port_poe_power_w(port: dict[str, Any]) -> int | float | None:
+    """Return PoE power in watts when exposed."""
+    value = _port_number(port, "poe_power", "poe_power_w")
+    if value is not None:
+        return value
+    value = _port_number(port, "poe_power_mw")
+    return value / 1000 if value is not None else None
+
+
+def _port_bool(port: dict[str, Any], *keys: str) -> bool | None:
+    """Return the first boolean-like raw port value."""
+    for key in keys:
+        value = port.get(key)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int) and value in (0, 1):
+            return bool(value)
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"true", "yes", "on", "enabled", "1"}:
+                return True
+            if lowered in {"false", "no", "off", "disabled", "0"}:
+                return False
+    return None
+
+
+def _port_lldp_neighbors(port: UniFiPort, device: UniFiDevice | None) -> list[dict[str, Any]]:
+    """Return LLDP neighbors for a port when exposed by the controller."""
+    if device is None:
+        return []
+    lldp_table = device.raw.get("lldp_table")
+    if not isinstance(lldp_table, list):
+        return []
+    neighbors: list[dict[str, Any]] = []
+    for row in lldp_table:
+        if not isinstance(row, dict) or _port_number(row, "local_port_idx") != port.port_idx:
+            continue
+        detail = {
+            "name": _port_value(row, "system_name", "hostname", "device_name", "chassis_name"),
+            "port": _port_value(row, "port_id", "port_name", "remote_port"),
+            "chassis_id": _port_value(row, "chassis_id"),
+            "mac": _port_value(row, "mac"),
+        }
+        neighbors.append({key: value for key, value in detail.items() if value not in (None, "")})
+    return neighbors
+
+
 SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     UniFiSensorDescription(
         key="state",
@@ -626,6 +735,7 @@ async def async_setup_entry(
             and description.value_fn(device) is not None
         )
     known_wans: set[str] = set()
+    known_ports: set[str] = set()
 
     def add_wan_entities() -> None:
         new_entities = [
@@ -638,9 +748,25 @@ async def async_setup_entry(
         known_wans.update(entity.wan_key for entity in new_entities)
         async_add_entities(new_entities)
 
+    def add_port_entities() -> None:
+        new_entities = [
+            UniFiPortSpeedSensor(coordinator, port_key)
+            for port_key, port in sorted(
+                coordinator.data.ports.items(),
+                key=lambda item: (item[1].device_key, item[1].port_idx),
+            )
+            if port_key not in known_ports
+        ]
+        if not new_entities:
+            return
+        known_ports.update(entity.port_key for entity in new_entities)
+        async_add_entities(new_entities)
+
     async_add_entities(entities)
     add_wan_entities()
+    add_port_entities()
     entry.async_on_unload(coordinator.async_add_listener(add_wan_entities))
+    entry.async_on_unload(coordinator.async_add_listener(add_port_entities))
 
 
 class UniFiInfrastructureSensor(CoordinatorEntity[UniFiInfrastructureCoordinator], SensorEntity):
@@ -743,6 +869,67 @@ class UniFiWanIpSensor(CoordinatorEntity[UniFiInfrastructureCoordinator], Sensor
         if self.wan is None:
             return None
         device = self.coordinator.data.devices.get(self.wan.device_key)
+        if device is None:
+            return None
+        return DeviceInfo(
+            identifiers={(DOMAIN, device.key)},
+            manufacturer="Ubiquiti",
+            name=device.name,
+            model=device.model,
+            sw_version=device.firmware,
+            serial_number=device.serial,
+            configuration_url=self.coordinator.client.base_url,
+        )
+
+
+class UniFiPortSpeedSensor(CoordinatorEntity[UniFiInfrastructureCoordinator], SensorEntity):
+    """UniFi switch/router port speed sensor."""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:ethernet"
+
+    def __init__(self, coordinator: UniFiInfrastructureCoordinator, port_key: str) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self.port_key = port_key
+        self._attr_unique_id = f"{port_key}_speed"
+        self._attr_name = f"{self.port.name} Speed" if self.port is not None else "Port Speed"
+
+    @property
+    def port(self) -> UniFiPort | None:
+        """Return the backing port."""
+        return self.coordinator.data.ports.get(self.port_key)
+
+    @property
+    def device(self) -> UniFiDevice | None:
+        """Return the backing device."""
+        if self.port is None:
+            return None
+        return self.coordinator.data.devices.get(self.port.device_key)
+
+    @property
+    def native_value(self) -> str | None:
+        """Return current negotiated port speed."""
+        return _port_speed_value(self.port) if self.port is not None else None
+
+    @property
+    def available(self) -> bool:
+        """Return whether the port row is currently available."""
+        return super().available and self.port is not None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return port details."""
+        if self.port is None:
+            return {}
+        return _port_attrs(self.port, self.device, self.coordinator)
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """Return Home Assistant device info."""
+        if self.port is None:
+            return None
+        device = self.coordinator.data.devices.get(self.port.device_key)
         if device is None:
             return None
         return DeviceInfo(

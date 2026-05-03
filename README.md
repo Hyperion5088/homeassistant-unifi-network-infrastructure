@@ -14,6 +14,7 @@ Current scope:
 - adopted UniFi gateway, switch, and access point inventory from the UniFi Network controller
 - read-only device state, identity, firmware, uptime, CPU, memory, temperature, load average, traffic, uplink, and client-count summary sensors where the controller exposes them
 - switch/gateway port count sensors where the controller exposes port inventory
+- per-port speed sensors for UniFi switches and gateways, with link/admin/PoE/LLDP/protection details exposed as attributes
 - access point radio and VAP count sensors where the controller exposes radio inventory
 - fan sensors only when the controller exposes concrete fan level or fan table data
 - SSID enable/disable controls exposed as switch entities on the UniFi router/controller device

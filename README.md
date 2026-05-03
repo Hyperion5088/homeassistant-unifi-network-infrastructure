@@ -6,7 +6,7 @@ This integration is intentionally limited to UniFi Network. It does not integrat
 
 ## Status
 
-This repository is an early V1 development build.
+This repository is a beta V1 development build. It is usable for testing, but entity names and optional controls may still change before a stable release.
 
 Current scope:
 
@@ -34,6 +34,16 @@ Sensor notes:
 - `Radio Count` is the number of physical AP radios.
 - `VAP Count` is the number of virtual AP/BSSID instances, so it can be higher than the number of SSIDs.
 - `State`, `Last Seen`, `System Load`, `Radio Count`, `VAP Count`, and `Radio Details` are disabled by default to keep new installs quieter. Existing early-development installs are migrated once so those entities are disabled by the integration unless the user enables them again afterwards.
+
+Entity naming rules:
+
+- Wi-Fi controls use `WiFi <SSID>`.
+- Port-forward controls use `Port Forward <rule name>`.
+- Conditional route policies use `Route Policy <policy name>`.
+- LAN/WAN addresses use `IP LAN`, `IP WAN 1`, `IP WAN 2`, and so on.
+- System health sensors use `System <sensor>`, for example `System CPU Usage` and `System Memory Usage`.
+- Port protection locks use `Protection <port>`.
+- Port status sensors use the port label directly so port rows sort by port label.
 
 Entity category rules:
 

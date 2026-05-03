@@ -47,7 +47,7 @@ class UniFiPortConfigProtectionLock(CoordinatorEntity[UniFiInfrastructureCoordin
 
     _attr_entity_category = EntityCategory.CONFIG
     _attr_has_entity_name = True
-    _attr_icon = "mdi:lock-network"
+    _attr_icon = "mdi:lock"
 
     def __init__(self, coordinator: UniFiInfrastructureCoordinator, port_key: str) -> None:
         """Initialize the lock."""

@@ -520,7 +520,7 @@ def _port_lldp_neighbors(port: UniFiPort, device: UniFiDevice | None) -> list[di
 SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     UniFiSensorDescription(
         key="state",
-        name="State",
+        name="System State",
         translation_key="state",
         device_class=SensorDeviceClass.ENUM,
         options=STATE_OPTIONS,
@@ -531,7 +531,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="ip_address",
-        name="IP Address",
+        name="IP LAN",
         translation_key="ip_address",
         icon="mdi:ip-network",
         value_fn=lambda device: device.ip,
@@ -559,7 +559,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="cpu_usage",
-        name="CPU Usage",
+        name="System CPU Usage",
         translation_key="cpu_usage",
         icon="mdi:cpu-64-bit",
         native_unit_of_measurement=PERCENTAGE,
@@ -568,7 +568,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="memory_usage",
-        name="Memory Usage",
+        name="System Memory Usage",
         translation_key="memory_usage",
         icon="mdi:memory",
         native_unit_of_measurement=PERCENTAGE,
@@ -577,7 +577,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="temperature",
-        name="Temperature",
+        name="System Temperature",
         translation_key="temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
@@ -586,7 +586,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="fan_level",
-        name="Fan Level",
+        name="System Fan Level",
         translation_key="fan_level",
         icon="mdi:fan",
         native_unit_of_measurement=PERCENTAGE,
@@ -594,14 +594,14 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="fan_summary",
-        name="Fan Summary",
+        name="System Fan Summary",
         translation_key="fan_summary",
         icon="mdi:fan",
         value_fn=_fan_summary,
     ),
     UniFiSensorDescription(
         key="uptime",
-        name="Uptime",
+        name="System Uptime",
         translation_key="uptime",
         icon="mdi:timer-outline",
         value_fn=_uptime_display,
@@ -609,7 +609,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="last_seen",
-        name="Last Seen",
+        name="System Last Seen",
         translation_key="last_seen",
         icon="mdi:clock-outline",
         device_class=SensorDeviceClass.TIMESTAMP,
@@ -649,14 +649,14 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="firmware",
-        name="Firmware",
+        name="System Firmware",
         translation_key="firmware",
         icon="mdi:chip",
         value_fn=lambda device: device.firmware,
     ),
     UniFiSensorDescription(
         key="update_status",
-        name="Update Status",
+        name="System Update Status",
         translation_key="update_status",
         icon="mdi:update",
         value_fn=_update_state,
@@ -855,7 +855,7 @@ class UniFiWanIpSensor(CoordinatorEntity[UniFiInfrastructureCoordinator], Sensor
         super().__init__(coordinator)
         self.wan_key = wan_key
         self._attr_unique_id = f"{wan_key}_ip_address"
-        self._attr_name = f"{self.wan.name} IP Address" if self.wan is not None else "WAN IP Address"
+        self._attr_name = f"IP {self.wan.name}" if self.wan is not None else "IP WAN"
 
     @property
     def wan(self) -> UniFiWan | None:

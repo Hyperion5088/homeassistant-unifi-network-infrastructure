@@ -285,5 +285,5 @@ class UniFiTrafficRouteEnabledSwitch(CoordinatorEntity[UniFiInfrastructureCoordi
 def _wlan_switch_name(wlan: UniFiWlan | None) -> str:
     """Return a clear WLAN switch name."""
     if wlan is None:
-        return "SSID"
-    return f"Guest Network {wlan.name}" if wlan.is_guest is True else f"SSID {wlan.name}"
+        return "WiFi"
+    return f"WiFi {wlan.name}"

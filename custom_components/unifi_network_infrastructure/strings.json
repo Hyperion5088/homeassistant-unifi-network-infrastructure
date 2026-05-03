@@ -36,10 +36,10 @@
   "entity": {
     "sensor": {
       "state": {
-        "name": "State"
+        "name": "System State"
       },
       "ip_address": {
-        "name": "IP Address"
+        "name": "IP LAN"
       },
       "mac_address": {
         "name": "MAC Address"
@@ -51,25 +51,25 @@
         "name": "Model"
       },
       "cpu_usage": {
-        "name": "CPU Usage"
+        "name": "System CPU Usage"
       },
       "memory_usage": {
-        "name": "Memory Usage"
+        "name": "System Memory Usage"
       },
       "temperature": {
-        "name": "Temperature"
+        "name": "System Temperature"
       },
       "fan_level": {
-        "name": "Fan Level"
+        "name": "System Fan Level"
       },
       "fan_summary": {
-        "name": "Fan Summary"
+        "name": "System Fan Summary"
       },
       "uptime": {
-        "name": "Uptime"
+        "name": "System Uptime"
       },
       "last_seen": {
-        "name": "Last Seen"
+        "name": "System Last Seen"
       },
       "load_average_1_min": {
         "name": "System Load 1 min"
@@ -81,10 +81,10 @@
         "name": "System Load 15 min"
       },
       "firmware": {
-        "name": "Firmware"
+        "name": "System Firmware"
       },
       "update_status": {
-        "name": "Update Status"
+        "name": "System Update Status"
       },
       "port_count": {
         "name": "Port Count"

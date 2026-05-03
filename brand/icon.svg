@@ -1,32 +1,35 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="UniFi Network Infrastructure icon">
   <defs>
-    <linearGradient id="bg" x1="34" y1="24" x2="222" y2="232" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#42d3ff"/>
-      <stop offset="0.48" stop-color="#006fff"/>
-      <stop offset="1" stop-color="#18245f"/>
+    <linearGradient id="line" x1="52" y1="54" x2="204" y2="198" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#54d7ff"/>
+      <stop offset="1" stop-color="#2384ff"/>
     </linearGradient>
-    <linearGradient id="line" x1="64" y1="82" x2="194" y2="177" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#f8fbff" stop-opacity="0.96"/>
-      <stop offset="1" stop-color="#8beaff" stop-opacity="0.82"/>
+    <linearGradient id="switch" x1="80" y1="118" x2="176" y2="184" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#d9f6ff"/>
     </linearGradient>
   </defs>
-
-  <rect width="256" height="256" rx="52" fill="url(#bg)"/>
-  <path d="M48 76c28-32 74-45 118-28 29 11 50 33 62 59" fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="14" stroke-linecap="round"/>
-  <path d="M37 164c29 34 79 48 126 30 30-11 51-34 63-61" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="14" stroke-linecap="round"/>
-
+  <g fill="none" stroke="url(#line)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M80 82h96"/>
+    <path d="M80 82 54 150"/>
+    <path d="M176 82l26 68"/>
+    <path d="M80 82l48 70"/>
+    <path d="M176 82l-48 70"/>
+  </g>
   <g>
-    <path d="M82 95h92M82 95l-26 55M174 95l26 55M82 95l46 54M174 95l-46 54" fill="none" stroke="url(#line)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-    <rect x="93" y="132" width="70" height="52" rx="13" fill="#f8fbff"/>
-    <rect x="106" y="146" width="44" height="7" rx="3.5" fill="#006fff"/>
-    <rect x="106" y="162" width="44" height="7" rx="3.5" fill="#263b80" fill-opacity="0.72"/>
-    <circle cx="82" cy="95" r="20" fill="#f8fbff"/>
-    <circle cx="174" cy="95" r="20" fill="#f8fbff"/>
-    <circle cx="56" cy="150" r="18" fill="#f8fbff"/>
-    <circle cx="200" cy="150" r="18" fill="#f8fbff"/>
-    <circle cx="82" cy="95" r="8" fill="#13b8ff"/>
-    <circle cx="174" cy="95" r="8" fill="#17d073"/>
-    <circle cx="56" cy="150" r="7" fill="#17d073"/>
-    <circle cx="200" cy="150" r="7" fill="#13b8ff"/>
+    <circle cx="80" cy="82" r="26" fill="#ffffff"/>
+    <circle cx="176" cy="82" r="26" fill="#ffffff"/>
+    <circle cx="54" cy="150" r="24" fill="#ffffff"/>
+    <circle cx="202" cy="150" r="24" fill="#ffffff"/>
+    <circle cx="80" cy="82" r="11" fill="#21c7ff"/>
+    <circle cx="176" cy="82" r="11" fill="#20d17a"/>
+    <circle cx="54" cy="150" r="10" fill="#20d17a"/>
+    <circle cx="202" cy="150" r="10" fill="#21c7ff"/>
+  </g>
+  <g>
+    <rect x="82" y="132" width="92" height="64" rx="16" fill="url(#switch)"/>
+    <rect x="100" y="149" width="56" height="8" rx="4" fill="#2384ff"/>
+    <rect x="100" y="166" width="56" height="8" rx="4" fill="#233b80" opacity="0.7"/>
+    <circle cx="158" cy="181" r="5" fill="#20d17a"/>
   </g>
 </svg>

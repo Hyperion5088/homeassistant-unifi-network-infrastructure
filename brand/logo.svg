@@ -1,39 +1,36 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="256" viewBox="0 0 512 256" role="img" aria-label="UniFi Network Infrastructure logo">
   <defs>
-    <linearGradient id="bg" x1="48" y1="31" x2="464" y2="225" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#f8fbff"/>
-      <stop offset="1" stop-color="#dff7ff"/>
+    <linearGradient id="line" x1="48" y1="62" x2="204" y2="196" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#54d7ff"/>
+      <stop offset="1" stop-color="#2384ff"/>
     </linearGradient>
-    <linearGradient id="mark" x1="55" y1="48" x2="203" y2="202" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#42d3ff"/>
-      <stop offset="0.52" stop-color="#006fff"/>
-      <stop offset="1" stop-color="#18245f"/>
-    </linearGradient>
-    <linearGradient id="line" x1="93" y1="94" x2="167" y2="148" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#f8fbff"/>
-      <stop offset="1" stop-color="#a8f0ff"/>
+    <linearGradient id="switch" x1="82" y1="122" x2="174" y2="184" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#d9f6ff"/>
     </linearGradient>
   </defs>
-
-  <rect width="512" height="256" rx="42" fill="url(#bg)"/>
-  <path d="M326 21c61 6 112 43 137 94 15 29 19 62 12 93" fill="none" stroke="#006fff" stroke-opacity="0.08" stroke-width="18" stroke-linecap="round"/>
-  <path d="M242 230c-57-8-103-41-130-86-19-31-25-66-19-101" fill="none" stroke="#13b8ff" stroke-opacity="0.08" stroke-width="18" stroke-linecap="round"/>
-
-  <g>
-    <rect x="52" y="48" width="152" height="152" rx="34" fill="url(#mark)"/>
-    <path d="M100 100h56M100 100l-18 43M156 100l18 43M100 100l28 43M156 100l-28 43" fill="none" stroke="url(#line)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-    <rect x="107" y="130" width="43" height="34" rx="9" fill="#f8fbff"/>
-    <circle cx="100" cy="100" r="13" fill="#f8fbff"/>
-    <circle cx="156" cy="100" r="13" fill="#f8fbff"/>
-    <circle cx="82" cy="143" r="12" fill="#f8fbff"/>
-    <circle cx="174" cy="143" r="12" fill="#f8fbff"/>
-    <circle cx="100" cy="100" r="5" fill="#13b8ff"/>
-    <circle cx="156" cy="100" r="5" fill="#17d073"/>
-    <circle cx="82" cy="143" r="5" fill="#17d073"/>
-    <circle cx="174" cy="143" r="5" fill="#13b8ff"/>
+  <g transform="translate(16 8)">
+    <g fill="none" stroke="url(#line)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M80 82h96"/>
+      <path d="M80 82 54 150"/>
+      <path d="M176 82l26 68"/>
+      <path d="M80 82l48 70"/>
+      <path d="M176 82l-48 70"/>
+    </g>
+    <circle cx="80" cy="82" r="24" fill="#ffffff"/>
+    <circle cx="176" cy="82" r="24" fill="#ffffff"/>
+    <circle cx="54" cy="150" r="22" fill="#ffffff"/>
+    <circle cx="202" cy="150" r="22" fill="#ffffff"/>
+    <circle cx="80" cy="82" r="10" fill="#21c7ff"/>
+    <circle cx="176" cy="82" r="10" fill="#20d17a"/>
+    <circle cx="54" cy="150" r="9" fill="#20d17a"/>
+    <circle cx="202" cy="150" r="9" fill="#21c7ff"/>
+    <rect x="83" y="132" width="90" height="62" rx="15" fill="url(#switch)"/>
+    <rect x="101" y="149" width="54" height="8" rx="4" fill="#2384ff"/>
+    <rect x="101" y="166" width="54" height="8" rx="4" fill="#233b80" opacity="0.7"/>
+    <circle cx="157" cy="181" r="5" fill="#20d17a"/>
   </g>
-
-  <text x="236" y="113" font-family="Avenir Next, Inter, Arial, sans-serif" font-size="42" font-weight="800" fill="#111b3f">UniFi</text>
-  <text x="236" y="158" font-family="Avenir Next, Inter, Arial, sans-serif" font-size="34" font-weight="700" fill="#2565c7">Infrastructure</text>
-  <text x="238" y="188" font-family="Avenir Next, Inter, Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="2.5" fill="#5f6f98">HOME ASSISTANT</text>
+  <text x="258" y="112" font-family="Inter, Avenir Next, Arial, sans-serif" font-size="44" font-weight="800" fill="#ffffff">UniFi</text>
+  <text x="258" y="158" font-family="Inter, Avenir Next, Arial, sans-serif" font-size="34" font-weight="750" fill="#54d7ff">Network</text>
+  <text x="260" y="190" font-family="Inter, Avenir Next, Arial, sans-serif" font-size="17" font-weight="700" letter-spacing="2" fill="#b8d9ff">INFRASTRUCTURE</text>
 </svg>

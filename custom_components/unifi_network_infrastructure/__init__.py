@@ -142,23 +142,23 @@ def _async_migrate_entity_ids(
     """Give early development entities stable descriptive names."""
     registry = er.async_get(hass)
     names_by_suffix = {
-        "state": "State",
-        "ip_address": "IP Address",
+        "state": "System State",
+        "ip_address": "IP LAN",
         "mac_address": "MAC Address",
         "serial_number": "Serial Number",
         "model": "Model",
-        "cpu_usage": "CPU Usage",
-        "memory_usage": "Memory Usage",
-        "temperature": "Temperature",
-        "fan_level": "Fan Level",
-        "fan_summary": "Fan Summary",
-        "uptime": "Uptime",
-        "last_seen": "Last Seen",
+        "cpu_usage": "System CPU Usage",
+        "memory_usage": "System Memory Usage",
+        "temperature": "System Temperature",
+        "fan_level": "System Fan Level",
+        "fan_summary": "System Fan Summary",
+        "uptime": "System Uptime",
+        "last_seen": "System Last Seen",
         "load_average_1_min": "System Load 1 min",
         "load_average_5_min": "System Load 5 min",
         "load_average_15_min": "System Load 15 min",
-        "firmware": "Firmware",
-        "update_status": "Update Status",
+        "firmware": "System Firmware",
+        "update_status": "System Update Status",
         "port_count": "Port Count",
         "radio_count": "Radio Count",
         "vap_count": "VAP Count",
@@ -168,6 +168,22 @@ def _async_migrate_entity_ids(
         "total_bytes": "Total Traffic",
         "uplink": "Uplink",
         "radio_summary": "Radio Details",
+    }
+    entity_id_suffixes = {
+        "state": "system_state",
+        "ip_address": "ip_lan",
+        "cpu_usage": "system_cpu_usage",
+        "memory_usage": "system_memory_usage",
+        "temperature": "system_temperature",
+        "fan_level": "system_fan_level",
+        "fan_summary": "system_fan_summary",
+        "uptime": "system_uptime",
+        "last_seen": "system_last_seen",
+        "load_average_1_min": "system_load_1_min",
+        "load_average_5_min": "system_load_5_min",
+        "load_average_15_min": "system_load_15_min",
+        "firmware": "system_firmware",
+        "update_status": "system_update_status",
     }
     for entity in list(registry.entities.values()):
         if entity.config_entry_id != entry.entry_id or entity.platform != DOMAIN:
@@ -202,7 +218,8 @@ def _async_migrate_entity_ids(
         device = coordinator.data.devices.get(device_key)
         if device is None:
             continue
-        desired_entity_id = f"sensor.{slugify(device.name)}_{suffix}"
+        desired_suffix = entity_id_suffixes.get(suffix, suffix)
+        desired_entity_id = f"sensor.{slugify(device.name)}_{desired_suffix}"
         updates: dict[str, object | None] = {
             "original_name": names_by_suffix[suffix],
             "entity_category": EntityCategory.DIAGNOSTIC if suffix in DIAGNOSTIC_SENSOR_SUFFIXES else None,
@@ -235,8 +252,8 @@ def _async_migrate_wan_sensor_entity_id(
     device = coordinator.data.devices.get(wan.device_key)
     if device is None:
         return False
-    desired_name = f"{wan.name} IP Address"
-    desired_entity_id = f"sensor.{slugify(device.name)}_{slugify(wan.name)}_ip_address"
+    desired_name = f"IP {wan.name}"
+    desired_entity_id = f"sensor.{slugify(device.name)}_ip_{slugify(wan.name)}"
     updates: dict[str, object | None] = {"original_name": desired_name}
     if entity.entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
         updates["new_entity_id"] = desired_entity_id
@@ -287,12 +304,8 @@ def _async_migrate_wlan_switch_entity_id(
     router = coordinator.data.devices.get(router_key) if router_key is not None else None
     if wlan is None or router is None:
         return
-    if wlan.is_guest is True:
-        desired_name = f"Guest Network {wlan.name}"
-        desired_entity_id = f"switch.{slugify(router.name)}_guest_network_{slugify(wlan.name)}"
-    else:
-        desired_name = f"SSID {wlan.name}"
-        desired_entity_id = f"switch.{slugify(router.name)}_ssid_{slugify(wlan.name)}"
+    desired_name = f"WiFi {wlan.name}"
+    desired_entity_id = f"switch.{slugify(router.name)}_wifi_{slugify(wlan.name)}"
     updates: dict[str, object | None] = {"original_name": desired_name}
     if entity.entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
         updates["new_entity_id"] = desired_entity_id
@@ -409,6 +422,7 @@ def _async_migrate_lock_entity_id(
     updates: dict[str, object | None] = {
         "name": desired_name,
         "original_name": desired_name,
+        "icon": None,
         "entity_category": EntityCategory.CONFIG,
     }
     if device is not None:

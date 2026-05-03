@@ -17,7 +17,8 @@ Current scope:
 - access point radio and VAP count sensors where the controller exposes radio inventory
 - fan sensors only when the controller exposes concrete fan level or fan table data
 - SSID enable/disable controls exposed as switch entities on the UniFi router/controller device
-- uplink port configuration protection locks for UniFi switches
+- switch and gateway port configuration protection locks, including router WAN uplinks when the controller exposes the WAN port mapping
+- internal/controller-facing gateway IP sensors plus separate WAN IP sensors for each detected internet uplink
 - no `device_tracker` platform
 - no ordinary network-client devices
 - diagnostics with credentials redacted
@@ -39,9 +40,9 @@ Entity category rules:
 
 Not included yet:
 
-- UniFi port controls
-- PoE controls
-- WLAN controls
+- UniFi port admin controls
+- UniFi PoE controls
+- per-AP WLAN controls
 - reboot / locate controls
 - firmware update actions
 - dashboard card
@@ -93,7 +94,9 @@ Per-AP SSID control is intentionally out of scope for now.
 
 Port protection uses the UniFi controller's local `port_table[].is_uplink` flag and child-device uplink metadata for UniFi switches and gateways with exposed switch ports. That means an uplink can still be protected when the upstream device is not UniFi hardware, and switch/router ports that feed downstream UniFi switches or access points can also be protected.
 
-Port protection creates a lock for every switch/router port and uses short names such as `Protection Port 3` on the switch/router device. Infrastructure uplink/downlink ports are locked by default; ordinary edge ports are unlocked by default and can be manually locked. Unlocking an infrastructure port temporarily allows maintenance and it automatically locks again after 15 minutes.
+For UniFi gateways, the normal `IP Address` sensor uses the internal/controller-facing address where the controller exposes one, such as `lan_ip`. Public internet addresses are exposed separately as `WAN 1 IP Address`, `WAN 2 IP Address`, and so on, depending on how many active WAN rows the controller reports.
+
+Port protection creates a lock for every switch/router port and uses short names such as `Protection Port 3` on the switch/router device. Infrastructure uplink/downlink ports and detected router WAN ports are locked by default; ordinary edge ports are unlocked by default and can be manually locked. Manual locks are stored locally by Home Assistant so they survive reloads and restarts. Unlocking an infrastructure port temporarily allows maintenance and it automatically locks again after 15 minutes.
 
 ## Design Boundary
 

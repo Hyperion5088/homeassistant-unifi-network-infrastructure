@@ -21,7 +21,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import UniFiDevice, UniFiInfrastructureCoordinator
+from .coordinator import UniFiDevice, UniFiInfrastructureCoordinator, UniFiWan
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -594,7 +594,22 @@ async def async_setup_entry(
             if (description.device_kinds is None or device.kind in description.device_kinds)
             and description.value_fn(device) is not None
         )
+    known_wans: set[str] = set()
+
+    def add_wan_entities() -> None:
+        new_entities = [
+            UniFiWanIpSensor(coordinator, wan_key)
+            for wan_key in sorted(coordinator.data.wans)
+            if wan_key not in known_wans
+        ]
+        if not new_entities:
+            return
+        known_wans.update(entity.wan_key for entity in new_entities)
+        async_add_entities(new_entities)
+
     async_add_entities(entities)
+    add_wan_entities()
+    entry.async_on_unload(coordinator.async_add_listener(add_wan_entities))
 
 
 class UniFiInfrastructureSensor(CoordinatorEntity[UniFiInfrastructureCoordinator], SensorEntity):
@@ -637,6 +652,67 @@ class UniFiInfrastructureSensor(CoordinatorEntity[UniFiInfrastructureCoordinator
     def device_info(self) -> DeviceInfo | None:
         """Return Home Assistant device info."""
         if (device := self.device) is None:
+            return None
+        return DeviceInfo(
+            identifiers={(DOMAIN, device.key)},
+            manufacturer="Ubiquiti",
+            name=device.name,
+            model=device.model,
+            sw_version=device.firmware,
+            serial_number=device.serial,
+            configuration_url=self.coordinator.client.base_url,
+        )
+
+
+class UniFiWanIpSensor(CoordinatorEntity[UniFiInfrastructureCoordinator], SensorEntity):
+    """UniFi router WAN IP address sensor."""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:wan"
+
+    def __init__(self, coordinator: UniFiInfrastructureCoordinator, wan_key: str) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self.wan_key = wan_key
+        self._attr_unique_id = f"{wan_key}_ip_address"
+        self._attr_name = f"{self.wan.name} IP Address" if self.wan is not None else "WAN IP Address"
+
+    @property
+    def wan(self) -> UniFiWan | None:
+        """Return the backing WAN uplink."""
+        return self.coordinator.data.wans.get(self.wan_key)
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the WAN IP address."""
+        return self.wan.ip if self.wan is not None else None
+
+    @property
+    def available(self) -> bool:
+        """Return whether the WAN row is currently available."""
+        return super().available and self.wan is not None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return WAN context."""
+        if self.wan is None:
+            return {}
+        attrs = {
+            "wan": self.wan.name,
+            "interface": self.wan.ifname,
+            "port_idx": self.wan.port_idx,
+            "status": self.wan.status,
+            "alive": self.wan.alive,
+        }
+        return {key: value for key, value in attrs.items() if value not in (None, "")}
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """Return Home Assistant device info."""
+        if self.wan is None:
+            return None
+        device = self.coordinator.data.devices.get(self.wan.device_key)
+        if device is None:
             return None
         return DeviceInfo(
             identifiers={(DOMAIN, device.key)},

@@ -10,6 +10,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import UniFiInfrastructureClient, UniFiInfrastructureError
@@ -59,8 +60,24 @@ class UniFiInfrastructureData:
 
     devices: dict[str, UniFiDevice]
     ports: dict[str, UniFiPort]
+    wans: dict[str, "UniFiWan"]
     wlans: dict[str, "UniFiWlan"]
     router_device_key: str | None
+
+
+@dataclass(slots=True)
+class UniFiWan:
+    """Normalized UniFi router WAN/internet uplink."""
+
+    key: str
+    device_key: str
+    name: str
+    ip: str
+    ifname: str | None
+    port_idx: int | None
+    status: str | None
+    alive: bool | None
+    raw: dict[str, Any]
 
 
 @dataclass(slots=True)
@@ -84,6 +101,7 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
         hass: HomeAssistant,
         client: UniFiInfrastructureClient,
         scan_interval: int,
+        storage_key: str | None = None,
     ) -> None:
         """Initialize the coordinator."""
         super().__init__(
@@ -96,6 +114,37 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
         self._manually_locked_ports: set[str] = set()
         self._temporarily_unlocked_ports: set[str] = set()
         self._auto_protect_timers: dict[str, Callable[[], None]] = {}
+        self._store: Store[dict[str, Any]] | None = (
+            Store(hass, 1, f"{DOMAIN}.{storage_key}") if storage_key else None
+        )
+
+    async def async_load_state(self) -> None:
+        """Load persisted local control state."""
+        if self._store is None:
+            return
+        stored = await self._store.async_load()
+        if not stored:
+            return
+        self._manually_locked_ports = {
+            str(port_key)
+            for port_key in stored.get("manually_locked_ports", [])
+            if port_key not in (None, "")
+        }
+
+    def _schedule_save_state(self) -> None:
+        """Persist local control state without blocking entity updates."""
+        if self._store is not None:
+            self.hass.create_task(self._async_save_state())
+
+    async def _async_save_state(self) -> None:
+        """Persist local control state."""
+        if self._store is None:
+            return
+        await self._store.async_save(
+            {
+                "manually_locked_ports": sorted(self._manually_locked_ports),
+            }
+        )
 
     async def _async_update_data(self) -> UniFiInfrastructureData:
         """Fetch data from UniFi Network."""
@@ -113,6 +162,7 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
         return UniFiInfrastructureData(
             devices=device_map,
             ports=_normalize_ports(normalized),
+            wans=_normalize_wans(normalized),
             wlans={wlan.key: wlan for wlan in normalized_wlans},
             router_device_key=_router_device_key(device_map),
         )
@@ -154,6 +204,7 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
         if not self.is_port_auto_protected(port_key):
             self._manually_locked_ports.add(port_key)
         self._cancel_auto_protect(port_key)
+        self._schedule_save_state()
         self.async_update_listeners()
 
     def unlock_port(self, port_key: str) -> None:
@@ -162,6 +213,7 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
         if self.is_port_auto_protected(port_key):
             self._temporarily_unlocked_ports.add(port_key)
             self._schedule_auto_protect(port_key)
+        self._schedule_save_state()
         self.async_update_listeners()
 
     def can_change_port(self, port_key: str) -> bool:
@@ -200,18 +252,26 @@ def _normalize_device(device: dict[str, Any]) -> UniFiDevice:
     mac = _first_string(device, "mac")
     key = _first_string(device, "_id", "device_id", "serial", "mac") or "unknown"
     name = _first_string(device, "name", "display_name", "hostname", "model", "mac") or key
+    kind = str(device.get("type") or "device").lower()
     return UniFiDevice(
         key=_clean_key(key),
         name=name,
-        kind=str(device.get("type") or "device").lower(),
+        kind=kind,
         model=_first_string(device, "model", "model_in_eol", "model_in_lts"),
         mac=mac,
-        ip=_first_string(device, "ip", "display_ip", "last_ip"),
+        ip=_management_ip(device, kind),
         serial=_first_string(device, "serial"),
         firmware=_first_string(device, "version", "firmwareVersion"),
         state=_device_state(device),
         raw=device,
     )
+
+
+def _management_ip(device: dict[str, Any], kind: str) -> str | None:
+    """Return the internal/controller-facing management IP."""
+    if kind in {"udm", "ugw"}:
+        return _first_string(device, "lan_ip", "display_ip", "last_ip", "ip")
+    return _first_string(device, "ip", "display_ip", "last_ip")
 
 
 def _normalize_ports(devices: list[UniFiDevice]) -> dict[str, UniFiPort]:
@@ -249,6 +309,38 @@ def _normalize_ports(devices: list[UniFiDevice]) -> dict[str, UniFiPort]:
     return ports
 
 
+def _normalize_wans(devices: list[UniFiDevice]) -> dict[str, UniFiWan]:
+    """Normalize WAN/internet uplinks for UniFi gateways."""
+    wans: dict[str, UniFiWan] = {}
+    for device in devices:
+        if device.kind not in {"udm", "ugw"}:
+            continue
+        status_by_name = _wan_status_by_name(device.raw)
+        alive_by_name = _wan_alive_by_name(device.raw)
+        for source_key, row in sorted(device.raw.items()):
+            if not source_key.startswith("wan") or not source_key[3:].isdigit() or not isinstance(row, dict):
+                continue
+            ip = _first_string(row, "ip")
+            if ip is None:
+                continue
+            wan_number = int(source_key[3:])
+            name = f"WAN {wan_number}"
+            status_key = "WAN" if wan_number == 1 else f"WAN{wan_number}"
+            key = f"{device.key}_wan_{wan_number}"
+            wans[key] = UniFiWan(
+                key=key,
+                device_key=device.key,
+                name=name,
+                ip=ip,
+                ifname=_first_string(row, "ifname", "name", "uplink_ifname"),
+                port_idx=_int_value(row.get("port_idx")),
+                status=status_by_name.get(status_key),
+                alive=alive_by_name.get(status_key),
+                raw=row,
+            )
+    return wans
+
+
 def _port_protection_reasons(devices: list[UniFiDevice]) -> dict[str, list[str]]:
     """Return auto-protection reasons keyed by local switch port."""
     devices_by_mac = {
@@ -259,6 +351,12 @@ def _port_protection_reasons(devices: list[UniFiDevice]) -> dict[str, list[str]]
     reasons: dict[str, list[str]] = {}
     for device in devices:
         if device.kind in PORT_DEVICE_KINDS:
+            for port_idx, wan_name in _router_wan_ports(device).items():
+                _add_protection_reason(
+                    reasons,
+                    f"{device.key}_port_{port_idx}",
+                    f"Internet uplink {wan_name}",
+                )
             port_table = device.raw.get("port_table")
             if isinstance(port_table, list):
                 for row in port_table:
@@ -292,6 +390,38 @@ def _port_protection_reasons(devices: list[UniFiDevice]) -> dict[str, list[str]]
     return reasons
 
 
+def _router_wan_ports(device: UniFiDevice) -> dict[int, str]:
+    """Return router WAN port indexes keyed by physical port index."""
+    if device.kind not in {"udm", "ugw"}:
+        return {}
+    wan_ports: dict[int, str] = {}
+    wan_ifnames: dict[str, str] = {}
+    for source_key, row in sorted(device.raw.items()):
+        if not source_key.startswith("wan") or not source_key[3:].isdigit() or not isinstance(row, dict):
+            continue
+        wan_number = int(source_key[3:])
+        name = f"WAN {wan_number}"
+        port_idx = _int_value(row.get("port_idx"))
+        if port_idx is not None:
+            wan_ports[port_idx] = name
+        for key in ("ifname", "name", "uplink_ifname"):
+            if (ifname := row.get(key)) not in (None, ""):
+                wan_ifnames[str(ifname)] = name
+
+    port_table = device.raw.get("port_table")
+    if isinstance(port_table, list) and wan_ifnames:
+        for row in port_table:
+            if not isinstance(row, dict):
+                continue
+            port_idx = _int_value(row.get("port_idx"))
+            if port_idx is None:
+                continue
+            ifname = row.get("ifname")
+            if ifname in wan_ifnames:
+                wan_ports[port_idx] = wan_ifnames[str(ifname)]
+    return wan_ports
+
+
 def _add_protection_reason(reasons: dict[str, list[str]], port_key: str, reason: str) -> None:
     """Add a protection reason once."""
     port_reasons = reasons.setdefault(port_key, [])
@@ -323,6 +453,33 @@ def _router_device_key(devices: dict[str, UniFiDevice]) -> str | None:
         if device.kind in {"udm", "ugw"}:
             return device.key
     return next(iter(devices), None)
+
+
+def _wan_status_by_name(device: dict[str, Any]) -> dict[str, str]:
+    """Return WAN status values from the controller payload."""
+    status = device.get("last_wan_status")
+    if not isinstance(status, dict):
+        return {}
+    return {
+        str(key): str(value)
+        for key, value in status.items()
+        if value not in (None, "")
+    }
+
+
+def _wan_alive_by_name(device: dict[str, Any]) -> dict[str, bool]:
+    """Return WAN alive values from the controller payload."""
+    interfaces = device.get("last_wan_interfaces")
+    if not isinstance(interfaces, dict):
+        return {}
+    alive: dict[str, bool] = {}
+    for key, value in interfaces.items():
+        if not isinstance(value, dict):
+            continue
+        is_alive = _bool_value(value.get("alive"))
+        if is_alive is not None:
+            alive[str(key)] = is_alive
+    return alive
 
 
 def _port_name(port: dict[str, Any], port_idx: int) -> str:

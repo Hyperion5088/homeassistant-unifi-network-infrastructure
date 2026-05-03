@@ -102,16 +102,32 @@ class UniFiInfrastructureClient:
             if isinstance(device, dict) and self._is_infrastructure_device(device)
         ]
 
-    async def _request_json(self, method: str, path: str) -> Any:
+    async def async_get_wlans(self) -> list[dict[str, Any]]:
+        """Return UniFi WLAN/SSID configuration rows."""
+        payload = await self._request_json("GET", f"/proxy/network/api/s/{self.site}/rest/wlanconf")
+        raw_wlans = payload.get("data", payload if isinstance(payload, list) else [])
+        if not isinstance(raw_wlans, list):
+            raise UniFiInfrastructureError("Unexpected UniFi WLAN response")
+        return [wlan for wlan in raw_wlans if isinstance(wlan, dict)]
+
+    async def async_set_wlan_enabled(self, wlan_id: str, enabled: bool) -> None:
+        """Enable or disable a WLAN/SSID."""
+        await self._request_json(
+            "PUT",
+            f"/proxy/network/api/s/{self.site}/rest/wlanconf/{wlan_id}",
+            json_data={"enabled": enabled},
+        )
+
+    async def _request_json(self, method: str, path: str, json_data: dict[str, Any] | None = None) -> Any:
         """Request JSON, refreshing the session once on auth failure."""
         if not self._authenticated:
             await self.async_login()
-        response = await self._request(method, path)
+        response = await self._request(method, path, json_data=json_data)
         if response.status == 401:
             response.release()
             self._authenticated = False
             await self.async_login()
-            response = await self._request(method, path)
+            response = await self._request(method, path, json_data=json_data)
         async with response:
             if response.status in (401, 403):
                 raise UniFiInfrastructureAuthError("UniFi authentication failed")
@@ -119,14 +135,22 @@ class UniFiInfrastructureClient:
                 text = await response.text()
                 raise UniFiInfrastructureError(f"{path} returned HTTP {response.status}: {text}")
             self._csrf_token = response.headers.get("x-updated-csrf-token", self._csrf_token)
+            if response.status == 204:
+                return {}
             return await response.json(content_type=None)
 
-    async def _request(self, method: str, path: str) -> aiohttp.ClientResponse:
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        json_data: dict[str, Any] | None = None,
+    ) -> aiohttp.ClientResponse:
         """Open an API request."""
         return await self.session.request(
             method,
             f"{self.base_url}{path}",
             headers=self._headers(),
+            json=json_data,
             ssl=self.verify_ssl,
         )
 

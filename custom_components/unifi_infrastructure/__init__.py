@@ -24,7 +24,7 @@ from .const import (
 )
 from .coordinator import UniFiInfrastructureCoordinator
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH]
 
 DIAGNOSTIC_SENSOR_SUFFIXES = frozenset(
     {

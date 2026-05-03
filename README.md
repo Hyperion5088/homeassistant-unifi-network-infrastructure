@@ -16,6 +16,7 @@ Current scope:
 - switch/gateway port count sensors where the controller exposes port inventory
 - access point radio and VAP count sensors where the controller exposes radio inventory
 - fan sensors only when the controller exposes concrete fan level or fan table data
+- SSID enable/disable controls exposed as switch entities on the UniFi router/controller device
 - no `device_tracker` platform
 - no ordinary network-client devices
 - diagnostics with credentials redacted
@@ -32,7 +33,7 @@ Entity category rules:
 - Normal sensors: operational values useful for dashboards and device cards, such as state, identity, firmware, temperature, clients, uplink, and port/radio inventory.
 - Diagnostic sensors: internal health or troubleshooting values, such as CPU, memory, uptime, last seen, system load, and cumulative traffic counters.
 - Configuration entities: future user-editable settings.
-- Control entities: future actions and toggles.
+- Control entities: actions and toggles, such as SSID enable/disable switches.
 
 Not included yet:
 
@@ -78,6 +79,13 @@ The integration uses the local UniFi OS login endpoint and then polls:
 - `GET /proxy/network/api/s/<site>/stat/device`
 
 It deliberately avoids client/device-tracker endpoints.
+
+SSID controls poll the UniFi WLAN configuration endpoint and create switch entities dynamically:
+
+- `GET /proxy/network/api/s/<site>/rest/wlanconf`
+- `PUT /proxy/network/api/s/<site>/rest/wlanconf/<wlan_id>`
+
+If a new WLAN/SSID is added later, the integration creates the matching switch on a future poll without reinstalling the integration.
 
 ## Design Boundary
 

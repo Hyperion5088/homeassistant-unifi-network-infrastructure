@@ -37,6 +37,21 @@ class UniFiInfrastructureData:
     """Coordinator data."""
 
     devices: dict[str, UniFiDevice]
+    wlans: dict[str, "UniFiWlan"]
+    router_device_key: str | None
+
+
+@dataclass(slots=True)
+class UniFiWlan:
+    """Normalized UniFi WLAN/SSID configuration."""
+
+    key: str
+    name: str
+    enabled: bool | None
+    security: str | None
+    band: str | None
+    is_guest: bool | None
+    raw: dict[str, Any]
 
 
 class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureData]):
@@ -61,10 +76,25 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
         """Fetch data from UniFi Network."""
         try:
             devices = await self.client.async_get_devices()
+            wlans = await self.client.async_get_wlans()
         except UniFiInfrastructureError as err:
             raise UpdateFailed(str(err)) from err
         normalized = [_normalize_device(device) for device in devices]
-        return UniFiInfrastructureData(devices={device.key: device for device in normalized})
+        normalized_wlans: list[UniFiWlan] = []
+        for wlan in wlans:
+            if (normalized_wlan := _normalize_wlan(wlan)) is not None:
+                normalized_wlans.append(normalized_wlan)
+        device_map = {device.key: device for device in normalized}
+        return UniFiInfrastructureData(
+            devices=device_map,
+            wlans={wlan.key: wlan for wlan in normalized_wlans},
+            router_device_key=_router_device_key(device_map),
+        )
+
+    async def async_set_wlan_enabled(self, wlan_id: str, enabled: bool) -> None:
+        """Enable or disable a WLAN/SSID and refresh data."""
+        await self.client.async_set_wlan_enabled(wlan_id, enabled)
+        await self.async_request_refresh()
 
 
 def _normalize_device(device: dict[str, Any]) -> UniFiDevice:
@@ -84,6 +114,32 @@ def _normalize_device(device: dict[str, Any]) -> UniFiDevice:
         state=_device_state(device),
         raw=device,
     )
+
+
+def _normalize_wlan(wlan: dict[str, Any]) -> UniFiWlan | None:
+    """Normalize a WLAN row."""
+    key = _first_string(wlan, "_id", "id")
+    name = _first_string(wlan, "name", "ssid")
+    if key is None or name is None:
+        return None
+    enabled = wlan.get("enabled")
+    return UniFiWlan(
+        key=key,
+        name=name,
+        enabled=enabled if isinstance(enabled, bool) else None,
+        security=_first_string(wlan, "security"),
+        band=_first_string(wlan, "wlan_band"),
+        is_guest=wlan.get("is_guest") if isinstance(wlan.get("is_guest"), bool) else None,
+        raw=wlan,
+    )
+
+
+def _router_device_key(devices: dict[str, UniFiDevice]) -> str | None:
+    """Return the preferred router/gateway device key for WLAN controls."""
+    for device in devices.values():
+        if device.kind in {"udm", "ugw"}:
+            return device.key
+    return next(iter(devices), None)
 
 
 def _device_state(device: dict[str, Any]) -> str | None:

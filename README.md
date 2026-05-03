@@ -92,7 +92,7 @@ If a new WLAN/SSID is added later, the integration creates the matching switch o
 
 Per-AP SSID control is intentionally out of scope for now.
 
-Port protection uses the UniFi controller's local `port_table[].is_uplink` flag and child-device uplink metadata for UniFi switches and gateways with exposed switch ports. That means an uplink can still be protected when the upstream device is not UniFi hardware, and switch/router ports that feed downstream UniFi switches or access points can also be protected.
+Port protection uses the UniFi controller's local `port_table[].is_uplink` flag, child-device uplink metadata, router WAN port mappings, and per-port LLDP rows where the controller exposes `lldp_table[].local_port_idx`. That means an uplink can still be protected when the upstream or downstream device is not UniFi hardware, and switch/router ports that feed downstream UniFi switches or access points can also be protected.
 
 For UniFi gateways, the normal `IP Address` sensor uses the internal/controller-facing address where the controller exposes one, such as `lan_ip`. Public internet addresses are exposed separately as `WAN 1 IP Address`, `WAN 2 IP Address`, and so on, depending on how many active WAN rows the controller reports.
 

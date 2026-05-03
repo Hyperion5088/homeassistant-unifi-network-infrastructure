@@ -357,6 +357,12 @@ def _port_protection_reasons(devices: list[UniFiDevice]) -> dict[str, list[str]]
                     f"{device.key}_port_{port_idx}",
                     f"Internet uplink {wan_name}",
                 )
+            for port_idx, neighbor in _lldp_port_neighbors(device).items():
+                _add_protection_reason(
+                    reasons,
+                    f"{device.key}_port_{port_idx}",
+                    f"LLDP neighbor {neighbor}",
+                )
             port_table = device.raw.get("port_table")
             if isinstance(port_table, list):
                 for row in port_table:
@@ -420,6 +426,37 @@ def _router_wan_ports(device: UniFiDevice) -> dict[int, str]:
             if ifname in wan_ifnames:
                 wan_ports[port_idx] = wan_ifnames[str(ifname)]
     return wan_ports
+
+
+def _lldp_port_neighbors(device: UniFiDevice) -> dict[int, str]:
+    """Return LLDP neighbors keyed by local port index."""
+    lldp_table = device.raw.get("lldp_table")
+    if not isinstance(lldp_table, list):
+        return {}
+
+    neighbors: dict[int, str] = {}
+    for row in lldp_table:
+        if not isinstance(row, dict):
+            continue
+        port_idx = _int_value(row.get("local_port_idx"))
+        if port_idx is None:
+            continue
+        if row.get("is_wired") is False:
+            continue
+        label = _first_string(
+            row,
+            "system_name",
+            "hostname",
+            "device_name",
+            "chassis_name",
+            "port_id",
+            "chassis_id",
+            "local_port_name",
+        )
+        if label is None:
+            label = f"on port {port_idx}"
+        neighbors[port_idx] = label
+    return neighbors
 
 
 def _add_protection_reason(reasons: dict[str, list[str]], port_key: str, reason: str) -> None:

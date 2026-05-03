@@ -18,6 +18,7 @@ Current scope:
 - access point radio and VAP count sensors where the controller exposes radio inventory
 - fan sensors only when the controller exposes concrete fan level or fan table data
 - SSID enable/disable controls exposed as switch entities on the UniFi router/controller device, with guest WLAN rows labelled as guest networks when UniFi marks them that way
+- guest network enable/disable controls exposed from UniFi Network configuration rows with `purpose: guest`
 - port-forward rule enable/disable controls exposed as switch entities on the UniFi router/controller device
 - switch and gateway port configuration protection locks, including router WAN uplinks when the controller exposes the WAN port mapping
 - internal/controller-facing gateway IP sensors plus separate WAN IP sensors for each detected internet uplink
@@ -95,6 +96,13 @@ SSID controls poll the UniFi WLAN configuration endpoint and create switch entit
 
 If a new WLAN/SSID is added later, the integration creates the matching switch on a future poll without reinstalling the integration.
 When UniFi marks a WLAN row as guest, the switch is named as a guest network rather than a generic SSID.
+
+Guest network controls poll the UniFi network configuration endpoint and create switch entities for networks marked as guest:
+
+- `GET /proxy/network/api/s/<site>/rest/networkconf`
+- `PUT /proxy/network/api/s/<site>/rest/networkconf/<network_id>`
+
+Guest network writes preserve the existing network payload and only change the `enabled` field.
 
 Port-forward controls poll the UniFi port-forward endpoint and create switch entities dynamically:
 

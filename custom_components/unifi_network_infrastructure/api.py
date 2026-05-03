@@ -110,6 +110,14 @@ class UniFiInfrastructureClient:
             raise UniFiInfrastructureError("Unexpected UniFi WLAN response")
         return [wlan for wlan in raw_wlans if isinstance(wlan, dict)]
 
+    async def async_get_networks(self) -> list[dict[str, Any]]:
+        """Return UniFi network configuration rows."""
+        payload = await self._request_json("GET", f"/proxy/network/api/s/{self.site}/rest/networkconf")
+        raw_networks = payload.get("data", payload if isinstance(payload, list) else [])
+        if not isinstance(raw_networks, list):
+            raise UniFiInfrastructureError("Unexpected UniFi network response")
+        return [network for network in raw_networks if isinstance(network, dict)]
+
     async def async_get_port_forwards(self) -> list[dict[str, Any]]:
         """Return UniFi port-forward rules."""
         payload = await self._request_json("GET", f"/proxy/network/api/s/{self.site}/rest/portforward")
@@ -124,6 +132,19 @@ class UniFiInfrastructureClient:
             "PUT",
             f"/proxy/network/api/s/{self.site}/rest/wlanconf/{wlan_id}",
             json_data={"enabled": enabled},
+        )
+
+    async def async_set_network_enabled(self, network: dict[str, Any], enabled: bool) -> None:
+        """Enable or disable a network without altering other fields."""
+        network_id = network.get("_id") or network.get("id")
+        if network_id in (None, ""):
+            raise UniFiInfrastructureError("Cannot update network without an ID")
+        payload = dict(network)
+        payload["enabled"] = enabled
+        await self._request_json(
+            "PUT",
+            f"/proxy/network/api/s/{self.site}/rest/networkconf/{network_id}",
+            json_data=payload,
         )
 
     async def async_set_port_forward_enabled(self, rule: dict[str, Any], enabled: bool) -> None:

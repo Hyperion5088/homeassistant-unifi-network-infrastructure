@@ -67,6 +67,7 @@ class UniFiInfrastructureData:
     ports: dict[str, UniFiPort]
     wans: dict[str, "UniFiWan"]
     wlans: dict[str, "UniFiWlan"]
+    guest_networks: dict[str, "UniFiNetwork"]
     port_forwards: dict[str, "UniFiPortForward"]
     router_device_key: str | None
 
@@ -96,6 +97,19 @@ class UniFiWlan:
     security: str | None
     band: str | None
     is_guest: bool | None
+    raw: dict[str, Any]
+
+
+@dataclass(slots=True)
+class UniFiNetwork:
+    """Normalized UniFi network configuration."""
+
+    key: str
+    name: str
+    enabled: bool | None
+    purpose: str | None
+    network_group: str | None
+    vlan: int | None
     raw: dict[str, Any]
 
 
@@ -173,6 +187,7 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
         try:
             devices = await self.client.async_get_devices()
             wlans = await self.client.async_get_wlans()
+            networks = await self.client.async_get_networks()
             port_forwards = await self.client.async_get_port_forwards()
         except UniFiInfrastructureError as err:
             raise UpdateFailed(str(err)) from err
@@ -181,6 +196,10 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
         for wlan in wlans:
             if (normalized_wlan := _normalize_wlan(wlan)) is not None:
                 normalized_wlans.append(normalized_wlan)
+        normalized_networks: list[UniFiNetwork] = []
+        for network in networks:
+            if (normalized_network := _normalize_network(network)) is not None:
+                normalized_networks.append(normalized_network)
         normalized_port_forwards: list[UniFiPortForward] = []
         for rule in port_forwards:
             if (normalized_rule := _normalize_port_forward(rule)) is not None:
@@ -191,6 +210,7 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
             ports=_normalize_ports(normalized),
             wans=_normalize_wans(normalized),
             wlans={wlan.key: wlan for wlan in normalized_wlans},
+            guest_networks={network.key: network for network in normalized_networks if _is_guest_network(network)},
             port_forwards={rule.key: rule for rule in normalized_port_forwards},
             router_device_key=_router_device_key(device_map),
         )
@@ -198,6 +218,14 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
     async def async_set_wlan_enabled(self, wlan_id: str, enabled: bool) -> None:
         """Enable or disable a WLAN/SSID and refresh data."""
         await self.client.async_set_wlan_enabled(wlan_id, enabled)
+        await self.async_request_refresh()
+
+    async def async_set_guest_network_enabled(self, network_id: str, enabled: bool) -> None:
+        """Enable or disable a guest network and refresh data."""
+        network = self.data.guest_networks.get(network_id) if self.data is not None else None
+        if network is None:
+            raise UniFiInfrastructureError("Guest network is no longer available")
+        await self.client.async_set_network_enabled(network.raw, enabled)
         await self.async_request_refresh()
 
     async def async_set_port_forward_enabled(self, rule_id: str, enabled: bool) -> None:
@@ -520,6 +548,29 @@ def _normalize_wlan(wlan: dict[str, Any]) -> UniFiWlan | None:
         is_guest=wlan.get("is_guest") if isinstance(wlan.get("is_guest"), bool) else None,
         raw=wlan,
     )
+
+
+def _normalize_network(network: dict[str, Any]) -> UniFiNetwork | None:
+    """Normalize a UniFi network row."""
+    key = _first_string(network, "_id", "id")
+    name = _first_string(network, "name")
+    if key is None or name is None:
+        return None
+    enabled = network.get("enabled")
+    return UniFiNetwork(
+        key=key,
+        name=name,
+        enabled=enabled if isinstance(enabled, bool) else None,
+        purpose=_first_string(network, "purpose"),
+        network_group=_first_string(network, "networkgroup", "network_group"),
+        vlan=_int_value(network.get("vlan")),
+        raw=network,
+    )
+
+
+def _is_guest_network(network: UniFiNetwork) -> bool:
+    """Return whether a network should be exposed as a guest network control."""
+    return network.purpose == "guest" or "guest" in network.name.lower()
 
 
 def _normalize_port_forward(rule: dict[str, Any]) -> UniFiPortForward | None:

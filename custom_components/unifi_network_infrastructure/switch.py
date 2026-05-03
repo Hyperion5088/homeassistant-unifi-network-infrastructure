@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import UniFiInfrastructureCoordinator, UniFiPortForward, UniFiWlan
+from .coordinator import UniFiInfrastructureCoordinator, UniFiNetwork, UniFiPortForward, UniFiWlan
 
 
 async def async_setup_entry(
@@ -23,6 +23,7 @@ async def async_setup_entry(
     """Set up UniFi Network Infrastructure switch controls."""
     coordinator: UniFiInfrastructureCoordinator = hass.data[DOMAIN][entry.entry_id]
     known_wlans: set[str] = set()
+    known_guest_networks: set[str] = set()
     known_port_forwards: set[str] = set()
 
     def add_wlan_entities() -> None:
@@ -34,6 +35,17 @@ async def async_setup_entry(
         if not new_entities:
             return
         known_wlans.update(entity.wlan_id for entity in new_entities)
+        async_add_entities(new_entities)
+
+    def add_guest_network_entities() -> None:
+        new_entities = [
+            UniFiGuestNetworkEnabledSwitch(coordinator, network_id)
+            for network_id in sorted(coordinator.data.guest_networks)
+            if network_id not in known_guest_networks
+        ]
+        if not new_entities:
+            return
+        known_guest_networks.update(entity.network_id for entity in new_entities)
         async_add_entities(new_entities)
 
     def add_port_forward_entities() -> None:
@@ -48,8 +60,10 @@ async def async_setup_entry(
         async_add_entities(new_entities)
 
     add_wlan_entities()
+    add_guest_network_entities()
     add_port_forward_entities()
     entry.async_on_unload(coordinator.async_add_listener(add_wlan_entities))
+    entry.async_on_unload(coordinator.async_add_listener(add_guest_network_entities))
     entry.async_on_unload(coordinator.async_add_listener(add_port_forward_entities))
 
 
@@ -193,6 +207,73 @@ class UniFiPortForwardEnabledSwitch(CoordinatorEntity[UniFiInfrastructureCoordin
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Disable the port-forward rule."""
         await self.coordinator.async_set_port_forward_enabled(self.rule_id, False)
+
+
+class UniFiGuestNetworkEnabledSwitch(CoordinatorEntity[UniFiInfrastructureCoordinator], SwitchEntity):
+    """Guest network enabled switch."""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:account-group"
+
+    def __init__(self, coordinator: UniFiInfrastructureCoordinator, network_id: str) -> None:
+        """Initialize the switch."""
+        super().__init__(coordinator)
+        self.network_id = network_id
+        self._attr_unique_id = f"guest_network_{network_id}_enabled"
+        self._attr_name = f"Guest Network {self.network.name}" if self.network is not None else "Guest Network"
+
+    @property
+    def network(self) -> UniFiNetwork | None:
+        """Return the backing network."""
+        return self.coordinator.data.guest_networks.get(self.network_id)
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return whether the guest network is enabled."""
+        return self.network.enabled if self.network is not None else None
+
+    @property
+    def available(self) -> bool:
+        """Return whether the guest network row is currently available."""
+        return super().available and self.network is not None and self.network.enabled is not None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return guest network context."""
+        if self.network is None:
+            return {}
+        attrs = {
+            "network_id": self.network.key,
+            "name": self.network.name,
+            "purpose": self.network.purpose,
+            "network_group": self.network.network_group,
+            "vlan": self.network.vlan,
+        }
+        return {key: value for key, value in attrs.items() if value not in (None, "")}
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """Return Home Assistant device info."""
+        router_key = self.coordinator.data.router_device_key
+        if router_key is None or (device := self.coordinator.data.devices.get(router_key)) is None:
+            return None
+        return DeviceInfo(
+            identifiers={(DOMAIN, device.key)},
+            manufacturer="Ubiquiti",
+            name=device.name,
+            model=device.model,
+            sw_version=device.firmware,
+            serial_number=device.serial,
+            configuration_url=self.coordinator.client.base_url,
+        )
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Enable the guest network."""
+        await self.coordinator.async_set_guest_network_enabled(self.network_id, True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Disable the guest network."""
+        await self.coordinator.async_set_guest_network_enabled(self.network_id, False)
 
 
 def _wlan_switch_name(wlan: UniFiWlan | None) -> str:

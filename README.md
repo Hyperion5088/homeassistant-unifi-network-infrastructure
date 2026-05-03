@@ -1,0 +1,73 @@
+# UniFi Infrastructure for Home Assistant
+
+Home Assistant integration for UniFi Network hardware only.
+
+This integration is intentionally narrower than the built-in UniFi Network integration. It is designed to expose adopted UniFi infrastructure devices without creating Home Assistant devices or entities for ordinary network clients.
+
+## Status
+
+This repository is an early V0 development build.
+
+Current scope:
+
+- local UniFi OS / UniFi Network login
+- adopted UniFi gateway, switch, and access point inventory from the UniFi Network controller
+- read-only device state, firmware, uptime, CPU, memory, temperature, IP, MAC, and client-count summary sensors where the controller exposes them
+- no `device_tracker` platform
+- no ordinary network-client devices
+- diagnostics with credentials redacted
+
+Not included yet:
+
+- UniFi port controls
+- PoE controls
+- WLAN controls
+- reboot / locate controls
+- firmware update actions
+- dashboard card
+
+## Installation
+
+### HACS
+
+Add this repository to HACS as an integration repository once it has been published:
+
+- Repository: `https://github.com/Hyperion5088/homeassistant-unifi-infrastructure`
+- Category: `Integration`
+
+Then install `UniFi Infrastructure`, restart Home Assistant, and add the integration from Settings > Devices & services.
+
+### Manual
+
+Copy `custom_components/unifi_infrastructure` to your Home Assistant `custom_components` directory, restart Home Assistant, then add the integration from Settings > Devices & services.
+
+## Configuration
+
+Use a dedicated local UniFi OS / UniFi Network service account. Do not use a Ubiquiti cloud SSO account.
+
+The first build asks for:
+
+- UniFi host
+- username
+- password
+- HTTPS port
+- site ID, usually `default`
+- TLS certificate verification setting
+- polling interval
+
+The integration uses the local UniFi OS login endpoint and then polls:
+
+- `POST /api/auth/login`
+- `GET /proxy/network/api/s/<site>/stat/device`
+
+It deliberately avoids client/device-tracker endpoints.
+
+## Design Boundary
+
+This project should stay focused on UniFi-managed infrastructure:
+
+- gateway/router
+- UniFi switches
+- UniFi access points
+
+Phones, laptops, TVs, servers, media boxes, and other ordinary network clients should not be imported into Home Assistant by this integration.

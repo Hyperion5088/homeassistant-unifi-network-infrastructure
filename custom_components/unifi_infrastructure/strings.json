@@ -1,0 +1,64 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "UniFi Infrastructure",
+        "description": "Connect to a local UniFi Network controller and import adopted UniFi hardware only. This integration does not create client trackers.",
+        "data": {
+          "host": "Host",
+          "username": "Username",
+          "password": "Password",
+          "port": "HTTPS port",
+          "site": "Site ID",
+          "verify_ssl": "Verify TLS certificate",
+          "scan_interval": "Polling interval in seconds"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to UniFi Network.",
+      "invalid_auth": "Invalid UniFi credentials."
+    },
+    "abort": {
+      "already_configured": "This UniFi site is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "UniFi Infrastructure Options",
+        "data": {
+          "scan_interval": "Polling interval in seconds"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "state": {
+        "name": "State"
+      },
+      "cpu_usage": {
+        "name": "CPU Usage"
+      },
+      "memory_usage": {
+        "name": "Memory Usage"
+      },
+      "temperature": {
+        "name": "Temperature"
+      },
+      "uptime": {
+        "name": "Uptime"
+      },
+      "firmware": {
+        "name": "Firmware"
+      },
+      "update_status": {
+        "name": "Update Status"
+      },
+      "connected_clients": {
+        "name": "Connected Clients"
+      }
+    }
+  }
+}

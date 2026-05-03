@@ -7,6 +7,7 @@ from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNA
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.event import async_call_later
 from homeassistant.util import slugify
 
@@ -24,6 +25,21 @@ from .const import (
 from .coordinator import UniFiInfrastructureCoordinator
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
+
+DIAGNOSTIC_SENSOR_SUFFIXES = frozenset(
+    {
+        "cpu_usage",
+        "memory_usage",
+        "uptime",
+        "last_seen",
+        "load_average_1_min",
+        "load_average_5_min",
+        "load_average_15_min",
+        "rx_bytes",
+        "tx_bytes",
+        "total_bytes",
+    }
+)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -129,6 +145,7 @@ def _async_migrate_entity_ids(
         desired_entity_id = f"sensor.{slugify(device.name)}_{suffix}"
         updates: dict[str, object | None] = {
             "original_name": names_by_suffix[suffix],
+            "entity_category": EntityCategory.DIAGNOSTIC if suffix in DIAGNOSTIC_SENSOR_SUFFIXES else None,
         }
         if entity.entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
             updates["new_entity_id"] = desired_entity_id

@@ -27,6 +27,13 @@ Sensor notes:
 - `Radio Count` is the number of physical AP radios.
 - `VAP Count` is the number of virtual AP/BSSID instances, so it can be higher than the number of SSIDs.
 
+Entity category rules:
+
+- Normal sensors: operational values useful for dashboards and device cards, such as state, identity, firmware, temperature, clients, uplink, and port/radio inventory.
+- Diagnostic sensors: internal health or troubleshooting values, such as CPU, memory, uptime, last seen, system load, and cumulative traffic counters.
+- Configuration entities: future user-editable settings.
+- Control entities: future actions and toggles.
+
 Not included yet:
 
 - UniFi port controls

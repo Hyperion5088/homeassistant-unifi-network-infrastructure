@@ -369,6 +369,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         translation_key="cpu_usage",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda device: _number(device, "system-stats.cpu", "cpu"),
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="memory_usage",
@@ -376,6 +377,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         translation_key="memory_usage",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda device: _number(device, "system-stats.mem", "mem"),
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="temperature",
@@ -403,6 +405,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         name="Uptime",
         translation_key="uptime",
         value_fn=_uptime_display,
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="last_seen",
@@ -410,6 +413,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         translation_key="last_seen",
         device_class=SensorDeviceClass.TIMESTAMP,
         value_fn=_last_seen,
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="load_average_1_min",

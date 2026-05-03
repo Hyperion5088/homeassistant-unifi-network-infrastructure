@@ -26,7 +26,8 @@ Current scope:
 Sensor notes:
 
 - `System Load` is a Linux-style unitless load average, not CPU percentage. Interpret it relative to the device CPU capacity.
-- `Received Traffic`, `Transmitted Traffic`, and `Total Traffic` are cumulative byte counters from the controller payload, not live Mbps bandwidth rates. Their native values stay in bytes for Home Assistant, with a readable KB/MB/GB/TB display value in attributes.
+- `Received Traffic`, `Transmitted Traffic`, and `Total Traffic` are cumulative counters from the controller payload, not live Mbps bandwidth rates. Their state is shown as a readable B/KB/MB/GB/TB value, with the raw byte counter retained in attributes.
+- When a device reports multiple temperature probes, the `Temperature` sensor uses the highest reported probe as its state and includes the individual probe values as attributes.
 - `Radio Count` is the number of physical AP radios.
 - `VAP Count` is the number of virtual AP/BSSID instances, so it can be higher than the number of SSIDs.
 - `State`, `Last Seen`, `System Load`, `Radio Count`, `VAP Count`, and `Radio Details` are disabled by default to keep new installs quieter. Existing early-development installs are migrated once so those entities are disabled by the integration unless the user enables them again afterwards.

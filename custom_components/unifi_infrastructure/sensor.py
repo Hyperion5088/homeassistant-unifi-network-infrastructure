@@ -11,10 +11,9 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
-    SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfInformation, UnitOfTemperature
+from homeassistant.const import PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -106,7 +105,42 @@ def _uptime_display(device: UniFiDevice) -> str | None:
 
 def _temperature(device: UniFiDevice) -> int | float | None:
     """Return device temperature."""
-    return _number(device, "general_temperature", "temperature", "system-stats.temperature")
+    if (value := _number(device, "general_temperature", "temperature", "system-stats.temperature")) is not None:
+        return value
+    probes = _temperature_probe_details(device)
+    values = [probe["value"] for probe in probes if isinstance(probe.get("value"), (int, float))]
+    return max(values) if values else None
+
+
+def _temperature_probe_details(device: UniFiDevice) -> list[dict[str, Any]]:
+    """Return individual temperature probes when exposed by UniFi."""
+    temperatures = device.raw.get("temperatures")
+    if not isinstance(temperatures, list):
+        return []
+    probes: list[dict[str, Any]] = []
+    for index, row in enumerate(temperatures, start=1):
+        if not isinstance(row, dict):
+            continue
+        value = row.get("value")
+        if isinstance(value, str):
+            try:
+                value = float(value)
+            except ValueError:
+                value = None
+        detail = {
+            "name": row.get("name") or f"probe_{index}",
+            "type": row.get("type"),
+            "value": value,
+            "unit": UnitOfTemperature.CELSIUS,
+        }
+        probes.append({key: value for key, value in detail.items() if value not in (None, "")})
+    return probes
+
+
+def _temperature_attrs(device: UniFiDevice) -> dict[str, Any] | None:
+    """Return temperature probe details."""
+    probes = _temperature_probe_details(device)
+    return {"probes": probes, "value_type": "highest reported probe"} if probes else None
 
 
 def _client_count(device: UniFiDevice) -> int | None:
@@ -332,13 +366,18 @@ def _format_bytes(value: int | float | None) -> str | None:
     return f"{size:.2f} {units[unit_index]}"
 
 
+def _traffic_value(device: UniFiDevice, *keys: str) -> str | None:
+    """Return a readable cumulative traffic counter."""
+    return _format_bytes(_number(device, *keys))
+
+
 def _traffic_attrs(device: UniFiDevice, direction: str, *keys: str) -> dict[str, Any]:
     """Return explanatory traffic counter attributes."""
     value = _number(device, *keys)
     return {
         "direction": direction,
-        "unit": "bytes",
-        "display_value": _format_bytes(value),
+        "raw_bytes": value,
+        "raw_unit": "B",
         "value_type": "cumulative traffic counter",
         "counter_type": "cumulative",
         "source": "UniFi device traffic counter",
@@ -411,6 +450,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         device_class=SensorDeviceClass.TEMPERATURE,
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         value_fn=_temperature,
+        attr_fn=_temperature_attrs,
     ),
     UniFiSensorDescription(
         key="fan_level",
@@ -527,10 +567,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         name="Received Traffic",
         translation_key="rx_bytes",
         icon="mdi:download-network",
-        device_class=SensorDeviceClass.DATA_SIZE,
-        native_unit_of_measurement=UnitOfInformation.BYTES,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        value_fn=lambda device: _number(device, "rx_bytes"),
+        value_fn=lambda device: _traffic_value(device, "rx_bytes"),
         attr_fn=lambda device: _traffic_attrs(device, "received", "rx_bytes"),
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
@@ -539,10 +576,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         name="Transmitted Traffic",
         translation_key="tx_bytes",
         icon="mdi:upload-network",
-        device_class=SensorDeviceClass.DATA_SIZE,
-        native_unit_of_measurement=UnitOfInformation.BYTES,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        value_fn=lambda device: _number(device, "tx_bytes"),
+        value_fn=lambda device: _traffic_value(device, "tx_bytes"),
         attr_fn=lambda device: _traffic_attrs(device, "transmitted", "tx_bytes"),
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
@@ -551,10 +585,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         name="Total Traffic",
         translation_key="total_bytes",
         icon="mdi:swap-horizontal-bold",
-        device_class=SensorDeviceClass.DATA_SIZE,
-        native_unit_of_measurement=UnitOfInformation.BYTES,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        value_fn=lambda device: _number(device, "bytes"),
+        value_fn=lambda device: _traffic_value(device, "bytes"),
         attr_fn=lambda device: _traffic_attrs(device, "total", "bytes"),
         entity_category=EntityCategory.DIAGNOSTIC,
     ),

@@ -8,7 +8,7 @@ from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfTemperature, UnitOfTime
+from homeassistant.const import PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -58,10 +58,22 @@ def _number(device: UniFiDevice, *keys: str) -> int | float | None:
     return None
 
 
-def _uptime(device: UniFiDevice) -> int | None:
+def _uptime_seconds(device: UniFiDevice) -> int | None:
     """Return uptime seconds."""
     value = _number(device, "uptime")
     return int(value) if value is not None else None
+
+
+def _uptime_display(device: UniFiDevice) -> str | None:
+    """Return uptime as a friendly days plus clock string."""
+    seconds = _uptime_seconds(device)
+    if seconds is None:
+        return None
+    days, remainder = divmod(seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    day_label = "day" if days == 1 else "days"
+    return f"{days} {day_label} {hours:02}:{minutes:02}:{seconds:02}"
 
 
 def _temperature(device: UniFiDevice) -> int | float | None:
@@ -98,6 +110,7 @@ def _device_attrs(device: UniFiDevice) -> dict[str, Any]:
 SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     UniFiSensorDescription(
         key="state",
+        name="State",
         translation_key="state",
         value_fn=lambda device: device.state,
         attr_fn=_device_attrs,
@@ -105,6 +118,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="cpu_usage",
+        name="CPU Usage",
         translation_key="cpu_usage",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda device: _number(device, "system-stats.cpu", "cpu"),
@@ -112,6 +126,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="memory_usage",
+        name="Memory Usage",
         translation_key="memory_usage",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda device: _number(device, "system-stats.mem", "mem"),
@@ -119,6 +134,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="temperature",
+        name="Temperature",
         translation_key="temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
@@ -127,26 +143,28 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="uptime",
+        name="Uptime",
         translation_key="uptime",
-        device_class=SensorDeviceClass.DURATION,
-        native_unit_of_measurement=UnitOfTime.SECONDS,
-        value_fn=_uptime,
+        value_fn=_uptime_display,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="firmware",
+        name="Firmware",
         translation_key="firmware",
         value_fn=lambda device: device.firmware,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="update_status",
+        name="Update Status",
         translation_key="update_status",
         value_fn=_update_state,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="connected_clients",
+        name="Connected Clients",
         translation_key="connected_clients",
         value_fn=_client_count,
         entity_category=EntityCategory.DIAGNOSTIC,

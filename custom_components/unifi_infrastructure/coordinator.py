@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
 import logging
+import re
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -19,6 +20,10 @@ from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 LOGGER = logging.getLogger(__name__)
 AUTO_PROTECT_SECONDS = 15 * 60
 PORT_DEVICE_KINDS = {"usw", "udm", "ugw"}
+DOMAIN_LABEL_PATTERN = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+DOMAIN_NAME_RE = re.compile(
+    rf"\b(?P<host>{DOMAIN_LABEL_PATTERN})(?:\.{DOMAIN_LABEL_PATTERN})*\.[A-Za-z]{{2,}}\b\.?"
+)
 
 
 @dataclass(slots=True)
@@ -251,7 +256,9 @@ def _normalize_device(device: dict[str, Any]) -> UniFiDevice:
     """Normalize a UniFi device row."""
     mac = _first_string(device, "mac")
     key = _first_string(device, "_id", "device_id", "serial", "mac") or "unknown"
-    name = _first_string(device, "name", "display_name", "hostname", "model", "mac") or key
+    name = _shorten_domain_names(
+        _first_string(device, "name", "display_name", "hostname", "model", "mac") or key
+    )
     kind = str(device.get("type") or "device").lower()
     return UniFiDevice(
         key=_clean_key(key),
@@ -600,6 +607,12 @@ def _first_string(device: dict[str, Any], *keys: str) -> str | None:
         if value not in (None, ""):
             return str(value)
     return None
+
+
+def _shorten_domain_names(value: str) -> str:
+    """Remove DNS suffixes from display names."""
+    shortened = DOMAIN_NAME_RE.sub(lambda match: match.group("host"), value)
+    return " ".join(shortened.split()) or value
 
 
 def _clean_key(value: str) -> str:

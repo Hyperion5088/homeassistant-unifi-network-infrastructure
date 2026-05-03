@@ -317,11 +317,28 @@ def _load_attrs(window: str) -> dict[str, Any]:
     }
 
 
-def _traffic_attrs(direction: str) -> dict[str, Any]:
+def _format_bytes(value: int | float | None) -> str | None:
+    """Return bytes as the most appropriate binary unit."""
+    if value is None:
+        return None
+    units = ("B", "KB", "MB", "GB", "TB")
+    size = float(value)
+    unit_index = 0
+    while abs(size) >= 1024 and unit_index < len(units) - 1:
+        size /= 1024
+        unit_index += 1
+    if unit_index == 0:
+        return f"{int(size)} {units[unit_index]}"
+    return f"{size:.2f} {units[unit_index]}"
+
+
+def _traffic_attrs(device: UniFiDevice, direction: str, *keys: str) -> dict[str, Any]:
     """Return explanatory traffic counter attributes."""
+    value = _number(device, *keys)
     return {
         "direction": direction,
         "unit": "bytes",
+        "display_value": _format_bytes(value),
         "value_type": "cumulative traffic counter",
         "counter_type": "cumulative",
         "source": "UniFi device traffic counter",
@@ -514,7 +531,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfInformation.BYTES,
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_fn=lambda device: _number(device, "rx_bytes"),
-        attr_fn=lambda device: _traffic_attrs("received"),
+        attr_fn=lambda device: _traffic_attrs(device, "received", "rx_bytes"),
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
@@ -526,7 +543,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfInformation.BYTES,
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_fn=lambda device: _number(device, "tx_bytes"),
-        attr_fn=lambda device: _traffic_attrs("transmitted"),
+        attr_fn=lambda device: _traffic_attrs(device, "transmitted", "tx_bytes"),
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
@@ -538,7 +555,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfInformation.BYTES,
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_fn=lambda device: _number(device, "bytes"),
-        attr_fn=lambda device: _traffic_attrs("total"),
+        attr_fn=lambda device: _traffic_attrs(device, "total", "bytes"),
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(

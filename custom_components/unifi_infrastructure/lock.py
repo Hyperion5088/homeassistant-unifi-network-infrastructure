@@ -31,7 +31,7 @@ async def async_setup_entry(
                 coordinator.data.ports.items(),
                 key=lambda item: (item[1].device_key, item[1].port_idx),
             )
-            if port.is_uplink and port_key not in known_ports
+            if port_key not in known_ports
         ]
         if not new_entities:
             return
@@ -54,7 +54,7 @@ class UniFiPortConfigProtectionLock(CoordinatorEntity[UniFiInfrastructureCoordin
         super().__init__(coordinator)
         self.port_key = port_key
         self._attr_unique_id = f"{port_key}_config_protection"
-        self._attr_name = f"Port Config Protection {self.port.name}" if self.port is not None else "Port Config Protection"
+        self._attr_name = f"Protection {self.port.name}" if self.port is not None else "Protection"
 
     @property
     def port(self) -> UniFiPort | None:
@@ -105,8 +105,10 @@ class UniFiPortConfigProtectionLock(CoordinatorEntity[UniFiInfrastructureCoordin
             "speed_mbps": self.port.speed_mbps,
             "poe_enabled": self.port.poe_enabled,
             "is_uplink": self.port.is_uplink,
+            "protection_reasons": list(self.port.protection_reasons),
             "auto_protected": reason is not None,
             "protected_reason": reason,
+            "manual_protection": self.coordinator.is_port_manually_locked(self.port_key),
             "temporarily_unlocked": self.coordinator.is_port_temporarily_unlocked(self.port_key),
             "auto_reprotect_seconds": AUTO_PROTECT_SECONDS,
         }

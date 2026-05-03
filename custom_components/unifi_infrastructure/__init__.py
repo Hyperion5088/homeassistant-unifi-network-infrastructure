@@ -155,6 +155,9 @@ def _async_migrate_entity_ids(
     for entity in list(registry.entities.values()):
         if entity.config_entry_id != entry.entry_id or entity.platform != DOMAIN:
             continue
+        if entity.entity_id.startswith("lock."):
+            _async_migrate_lock_entity_id(registry, entity, coordinator)
+            continue
         unique_id = str(entity.unique_id or "")
         device_key = ""
         suffix = ""
@@ -183,3 +186,31 @@ def _async_migrate_entity_ids(
         if entity.entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
             updates["new_entity_id"] = desired_entity_id
         registry.async_update_entity(entity.entity_id, **updates)
+
+
+def _async_migrate_lock_entity_id(
+    registry: er.EntityRegistry,
+    entity: er.RegistryEntry,
+    coordinator: UniFiInfrastructureCoordinator,
+) -> None:
+    """Shorten early port protection lock names."""
+    unique_id = str(entity.unique_id or "")
+    suffix = "_config_protection"
+    if not unique_id.endswith(suffix):
+        return
+    port_key = unique_id[: -len(suffix)]
+    port = coordinator.data.ports.get(port_key)
+    if port is None:
+        return
+    device = coordinator.data.devices.get(port.device_key)
+    desired_name = f"Protection {port.name}"
+    updates: dict[str, object | None] = {
+        "name": desired_name,
+        "original_name": desired_name,
+        "entity_category": EntityCategory.CONFIG,
+    }
+    if device is not None:
+        desired_entity_id = f"lock.{slugify(device.name)}_protection_{slugify(port.name)}"
+        if entity.entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
+            updates["new_entity_id"] = desired_entity_id
+    registry.async_update_entity(entity.entity_id, **updates)

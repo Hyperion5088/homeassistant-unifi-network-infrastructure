@@ -17,6 +17,7 @@ from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 
 LOGGER = logging.getLogger(__name__)
 AUTO_PROTECT_SECONDS = 15 * 60
+PORT_DEVICE_KINDS = {"usw", "udm", "ugw"}
 
 
 @dataclass(slots=True)
@@ -46,6 +47,7 @@ class UniFiPort:
     enabled: bool | None
     up: bool | None
     is_uplink: bool
+    protection_reasons: tuple[str, ...]
     speed_mbps: int | None
     poe_enabled: bool | None
     raw: dict[str, Any]
@@ -91,6 +93,7 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
             update_interval=timedelta(seconds=scan_interval) if scan_interval > 0 else DEFAULT_SCAN_INTERVAL,
         )
         self.client = client
+        self._manually_locked_ports: set[str] = set()
         self._temporarily_unlocked_ports: set[str] = set()
         self._auto_protect_timers: dict[str, Callable[[], None]] = {}
 
@@ -121,31 +124,41 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
 
     def is_port_locked(self, port_key: str) -> bool:
         """Return whether port configuration controls are protected."""
-        return self.is_port_auto_protected(port_key) and port_key not in self._temporarily_unlocked_ports
+        return port_key in self._manually_locked_ports or (
+            self.is_port_auto_protected(port_key) and port_key not in self._temporarily_unlocked_ports
+        )
 
     def is_port_auto_protected(self, port_key: str) -> bool:
-        """Return whether UniFi marks the port as an uplink."""
+        """Return whether UniFi marks the port as infrastructure-facing."""
         port = self.data.ports.get(port_key) if self.data is not None else None
-        return port.is_uplink if port is not None else False
+        return bool(port.protection_reasons) if port is not None else False
 
     def port_protection_reason(self, port_key: str) -> str | None:
         """Return why a port is auto-protected."""
-        if self.is_port_auto_protected(port_key):
-            return "UniFi marks this port as the switch uplink"
-        return None
+        port = self.data.ports.get(port_key) if self.data is not None else None
+        if port is None or not port.protection_reasons:
+            return None
+        return " | ".join(port.protection_reasons)
 
     def is_port_temporarily_unlocked(self, port_key: str) -> bool:
         """Return whether an auto-protected port is temporarily unlocked."""
         return port_key in self._temporarily_unlocked_ports
 
+    def is_port_manually_locked(self, port_key: str) -> bool:
+        """Return whether the user manually locked a non-infrastructure port."""
+        return port_key in self._manually_locked_ports
+
     def lock_port(self, port_key: str) -> None:
         """Protect a port immediately."""
         self._temporarily_unlocked_ports.discard(port_key)
+        if not self.is_port_auto_protected(port_key):
+            self._manually_locked_ports.add(port_key)
         self._cancel_auto_protect(port_key)
         self.async_update_listeners()
 
     def unlock_port(self, port_key: str) -> None:
         """Temporarily allow configuration changes on an auto-protected port."""
+        self._manually_locked_ports.discard(port_key)
         if self.is_port_auto_protected(port_key):
             self._temporarily_unlocked_ports.add(port_key)
             self._schedule_auto_protect(port_key)
@@ -204,8 +217,9 @@ def _normalize_device(device: dict[str, Any]) -> UniFiDevice:
 def _normalize_ports(devices: list[UniFiDevice]) -> dict[str, UniFiPort]:
     """Normalize UniFi switch port rows."""
     ports: dict[str, UniFiPort] = {}
+    protection_reasons = _port_protection_reasons(devices)
     for device in devices:
-        if device.kind != "usw":
+        if device.kind not in PORT_DEVICE_KINDS:
             continue
         port_table = device.raw.get("port_table")
         if not isinstance(port_table, list):
@@ -227,11 +241,62 @@ def _normalize_ports(devices: list[UniFiDevice]) -> dict[str, UniFiPort]:
                 enabled=_bool_value(row.get("enabled")),
                 up=_bool_value(row.get("up")),
                 is_uplink=row.get("is_uplink") is True,
+                protection_reasons=tuple(protection_reasons.get(key, ())),
                 speed_mbps=_int_value(row.get("speed")),
                 poe_enabled=_poe_enabled(row),
                 raw=row,
             )
     return ports
+
+
+def _port_protection_reasons(devices: list[UniFiDevice]) -> dict[str, list[str]]:
+    """Return auto-protection reasons keyed by local switch port."""
+    devices_by_mac = {
+        device.mac.lower(): device
+        for device in devices
+        if device.mac is not None
+    }
+    reasons: dict[str, list[str]] = {}
+    for device in devices:
+        if device.kind in PORT_DEVICE_KINDS:
+            port_table = device.raw.get("port_table")
+            if isinstance(port_table, list):
+                for row in port_table:
+                    if not isinstance(row, dict) or row.get("is_uplink") is not True:
+                        continue
+                    port_idx = _int_value(row.get("port_idx"))
+                    if port_idx is None:
+                        port_idx = _int_value(row.get("port"))
+                    if port_idx is not None:
+                        _add_protection_reason(
+                            reasons,
+                            f"{device.key}_port_{port_idx}",
+                            "UniFi marks this port as the switch uplink",
+                        )
+
+        uplink = device.raw.get("uplink")
+        if not isinstance(uplink, dict):
+            continue
+        parent_mac = _mac_value(uplink.get("uplink_mac"))
+        parent_port = _int_value(uplink.get("uplink_remote_port"))
+        if parent_mac is None or parent_port is None:
+            continue
+        parent = devices_by_mac.get(parent_mac)
+        if parent is None or parent.kind not in PORT_DEVICE_KINDS:
+            continue
+        _add_protection_reason(
+            reasons,
+            f"{parent.key}_port_{parent_port}",
+            f"Feeds {device.name}",
+        )
+    return reasons
+
+
+def _add_protection_reason(reasons: dict[str, list[str]], port_key: str, reason: str) -> None:
+    """Add a protection reason once."""
+    port_reasons = reasons.setdefault(port_key, [])
+    if reason not in port_reasons:
+        port_reasons.append(reason)
 
 
 def _normalize_wlan(wlan: dict[str, Any]) -> UniFiWlan | None:
@@ -307,6 +372,13 @@ def _int_value(value: Any) -> int | None:
         except ValueError:
             return None
     return None
+
+
+def _mac_value(value: Any) -> str | None:
+    """Return a normalized MAC address string."""
+    if value in (None, ""):
+        return None
+    return str(value).strip().lower()
 
 
 def _device_state(device: dict[str, Any]) -> str | None:

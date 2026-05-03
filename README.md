@@ -25,7 +25,7 @@ Current scope:
 Sensor notes:
 
 - `System Load` is a Linux-style unitless load average, not CPU percentage. Interpret it relative to the device CPU capacity.
-- `Received Traffic`, `Transmitted Traffic`, and `Total Traffic` are cumulative byte counters from the controller payload, not live Mbps bandwidth rates.
+- `Received Traffic`, `Transmitted Traffic`, and `Total Traffic` are cumulative byte counters from the controller payload, not live Mbps bandwidth rates. Their native values stay in bytes for Home Assistant, with a readable KB/MB/GB/TB display value in attributes.
 - `Radio Count` is the number of physical AP radios.
 - `VAP Count` is the number of virtual AP/BSSID instances, so it can be higher than the number of SSIDs.
 - `State`, `Last Seen`, `System Load`, `Radio Count`, `VAP Count`, and `Radio Details` are disabled by default to keep new installs quieter. Existing early-development installs are migrated once so those entities are disabled by the integration unless the user enables them again afterwards.
@@ -91,9 +91,9 @@ If a new WLAN/SSID is added later, the integration creates the matching switch o
 
 Per-AP SSID control is intentionally out of scope for now.
 
-Switch uplink protection uses the UniFi controller's local `port_table[].is_uplink` flag. That means an uplink can still be protected when the upstream device is not UniFi hardware, because the rule is based on the local UniFi switch port role rather than LLDP identity.
+Port protection uses the UniFi controller's local `port_table[].is_uplink` flag and child-device uplink metadata for UniFi switches and gateways with exposed switch ports. That means an uplink can still be protected when the upstream device is not UniFi hardware, and switch/router ports that feed downstream UniFi switches or access points can also be protected.
 
-Uplink protection locks are locked by default. Unlocking one temporarily allows maintenance and it automatically locks again after 15 minutes.
+Port protection creates a lock for every switch/router port and uses short names such as `Protection Port 3` on the switch/router device. Infrastructure uplink/downlink ports are locked by default; ordinary edge ports are unlocked by default and can be manually locked. Unlocking an infrastructure port temporarily allows maintenance and it automatically locks again after 15 minutes.
 
 ## Design Boundary
 

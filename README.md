@@ -20,6 +20,13 @@ Current scope:
 - no ordinary network-client devices
 - diagnostics with credentials redacted
 
+Sensor notes:
+
+- `System Load` is a Linux-style unitless load average, not CPU percentage.
+- `Received Traffic`, `Transmitted Traffic`, and `Total Traffic` are cumulative byte counters from the controller payload, not live Mbps bandwidth rates.
+- `Radio Count` is the number of physical AP radios.
+- `VAP Count` is the number of virtual AP/BSSID instances, so it can be higher than the number of SSIDs.
+
 Not included yet:
 
 - UniFi port controls

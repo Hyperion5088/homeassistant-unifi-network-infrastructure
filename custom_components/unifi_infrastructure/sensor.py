@@ -33,7 +33,6 @@ class UniFiSensorDescription(SensorEntityDescription):
     device_kinds: frozenset[str] | None = None
 
 
-INFRASTRUCTURE_KINDS = frozenset({"udm", "ugw", "usw", "uap"})
 SWITCH_KINDS = frozenset({"usw"})
 AP_KINDS = frozenset({"uap"})
 GATEWAY_KINDS = frozenset({"udm", "ugw"})
@@ -268,17 +267,66 @@ def _radio_attrs(device: UniFiDevice) -> dict[str, Any] | None:
     radios = device.raw.get("radio_table")
     if not isinstance(radios, list):
         return None
-    attrs: dict[str, Any] = {}
+    details: list[dict[str, Any]] = []
     for index, radio in enumerate(radios, start=1):
         if not isinstance(radio, dict):
             continue
-        radio_name = radio.get("name") or radio.get("radio") or radio.get("radio_name") or f"radio_{index}"
-        prefix = str(radio_name).lower().replace(" ", "_")
-        for key in ("channel", "ht", "tx_power", "radio", "name", "radio_name"):
-            value = radio.get(key)
-            if value not in (None, ""):
-                attrs[f"{prefix}_{key}"] = value
-    return attrs or None
+        detail = {
+            "name": radio.get("name") or radio.get("radio_name") or f"radio_{index}",
+            "band": _radio_band(radio.get("radio")),
+            "channel": radio.get("channel"),
+            "channel_width_mhz": radio.get("ht"),
+            "tx_power_mode": radio.get("tx_power_mode"),
+            "max_tx_power_dbm": radio.get("max_txpower"),
+            "min_tx_power_dbm": radio.get("min_txpower"),
+            "spatial_streams": radio.get("nss"),
+        }
+        details.append({key: value for key, value in detail.items() if value not in (None, "")})
+    return {"radios": details} if details else None
+
+
+def _radio_band(value: Any) -> str:
+    """Return a friendly Wi-Fi band from UniFi's radio code."""
+    return {
+        "ng": "2.4 GHz",
+        "na": "5 GHz",
+        "6e": "6 GHz",
+        "6g": "6 GHz",
+    }.get(str(value), str(value) if value not in (None, "") else "unknown")
+
+
+def _radio_details_state(device: UniFiDevice) -> str | None:
+    """Return a readable access point radio summary."""
+    radios = device.raw.get("radio_table")
+    if not isinstance(radios, list) or not radios:
+        return None
+    bands = [_radio_band(radio.get("radio")) for radio in radios if isinstance(radio, dict)]
+    count = len(radios)
+    radio_label = "radio" if count == 1 else "radios"
+    return f"{count} {radio_label}: {', '.join(bands)}" if bands else f"{count} {radio_label}"
+
+
+def _load_attrs(window: str) -> dict[str, Any]:
+    """Return explanatory load average attributes."""
+    return {
+        "window": window,
+        "unit": "unitless",
+        "value_type": "load average",
+        "source": "sys_stats load average",
+        "description": "Linux-style system load, not CPU percentage.",
+    }
+
+
+def _traffic_attrs(direction: str) -> dict[str, Any]:
+    """Return explanatory traffic counter attributes."""
+    return {
+        "direction": direction,
+        "unit": "bytes",
+        "value_type": "cumulative traffic counter",
+        "counter_type": "cumulative",
+        "source": "UniFi device traffic counter",
+        "description": "Counter value from the controller payload, not live bandwidth.",
+    }
 
 
 SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
@@ -377,23 +425,26 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="load_average_1_min",
-        name="Load Average 1 min",
+        name="System Load 1 min",
         translation_key="load_average_1_min",
         value_fn=lambda device: _number(device, "sys_stats.loadavg_1"),
+        attr_fn=lambda device: _load_attrs("1 minute"),
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="load_average_5_min",
-        name="Load Average 5 min",
+        name="System Load 5 min",
         translation_key="load_average_5_min",
         value_fn=lambda device: _number(device, "sys_stats.loadavg_5"),
+        attr_fn=lambda device: _load_attrs("5 minutes"),
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="load_average_15_min",
-        name="Load Average 15 min",
+        name="System Load 15 min",
         translation_key="load_average_15_min",
         value_fn=lambda device: _number(device, "sys_stats.loadavg_15"),
+        attr_fn=lambda device: _load_attrs("15 minutes"),
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
@@ -443,32 +494,35 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="rx_bytes",
-        name="RX Bytes",
+        name="Received Traffic",
         translation_key="rx_bytes",
         device_class=SensorDeviceClass.DATA_SIZE,
         native_unit_of_measurement=UnitOfInformation.BYTES,
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_fn=lambda device: _number(device, "rx_bytes"),
+        attr_fn=lambda device: _traffic_attrs("received"),
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="tx_bytes",
-        name="TX Bytes",
+        name="Transmitted Traffic",
         translation_key="tx_bytes",
         device_class=SensorDeviceClass.DATA_SIZE,
         native_unit_of_measurement=UnitOfInformation.BYTES,
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_fn=lambda device: _number(device, "tx_bytes"),
+        attr_fn=lambda device: _traffic_attrs("transmitted"),
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="total_bytes",
-        name="Total Bytes",
+        name="Total Traffic",
         translation_key="total_bytes",
         device_class=SensorDeviceClass.DATA_SIZE,
         native_unit_of_measurement=UnitOfInformation.BYTES,
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_fn=lambda device: _number(device, "bytes"),
+        attr_fn=lambda device: _traffic_attrs("total"),
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
@@ -481,9 +535,9 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="radio_summary",
-        name="Radio Summary",
+        name="Radio Details",
         translation_key="radio_summary",
-        value_fn=lambda device: _ap_radio_count(device),
+        value_fn=_radio_details_state,
         attr_fn=lambda device: _radio_attrs(device) or {},
         device_kinds=AP_KINDS,
         entity_category=EntityCategory.DIAGNOSTIC,

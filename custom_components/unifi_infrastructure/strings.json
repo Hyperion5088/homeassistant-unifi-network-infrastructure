@@ -72,13 +72,13 @@
         "name": "Last Seen"
       },
       "load_average_1_min": {
-        "name": "Load Average 1 min"
+        "name": "System Load 1 min"
       },
       "load_average_5_min": {
-        "name": "Load Average 5 min"
+        "name": "System Load 5 min"
       },
       "load_average_15_min": {
-        "name": "Load Average 15 min"
+        "name": "System Load 15 min"
       },
       "firmware": {
         "name": "Firmware"
@@ -99,19 +99,19 @@
         "name": "Connected Clients"
       },
       "rx_bytes": {
-        "name": "RX Bytes"
+        "name": "Received Traffic"
       },
       "tx_bytes": {
-        "name": "TX Bytes"
+        "name": "Transmitted Traffic"
       },
       "total_bytes": {
-        "name": "Total Bytes"
+        "name": "Total Traffic"
       },
       "uplink": {
         "name": "Uplink"
       },
       "radio_summary": {
-        "name": "Radio Summary"
+        "name": "Radio Details"
       }
     }
   }

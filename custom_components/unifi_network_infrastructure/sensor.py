@@ -404,15 +404,22 @@ def _port_attrs(port: UniFiPort, device: UniFiDevice | None, coordinator: UniFiI
         "device": device.name if device is not None else port.device_key,
         "port": port.name,
         "port_idx": port.port_idx,
+        "interface": _port_value(raw, "ifname"),
         "enabled": port.enabled,
         "link_up": port.up,
         "speed_mbps": port.speed_mbps,
+        "max_speed_mbps": _port_number(raw, "max_speed"),
+        "speed_capability": _port_value(raw, "speed_caps"),
         "poe_enabled": port.poe_enabled,
-        "poe_capable": _port_bool(raw, "poe_caps", "poe_capable", "is_poe"),
+        "poe_capable": _port_poe_capable(raw),
         "poe_power_w": _port_poe_power_w(raw),
         "poe_mode": _port_value(raw, "poe_mode", "poe_caps", "port_poe"),
+        "poe_class": _port_value(raw, "poe_class"),
         "media": _port_value(raw, "media", "media_type", "port_type", "type"),
+        "autoneg": _port_bool(raw, "autoneg"),
         "full_duplex": _port_bool(raw, "full_duplex"),
+        "flow_control_rx": _port_bool(raw, "flowctrl_rx"),
+        "flow_control_tx": _port_bool(raw, "flowctrl_tx"),
         "is_uplink": port.is_uplink,
         "protection_reasons": list(port.protection_reasons),
         "auto_protected": coordinator.is_port_auto_protected(port.key),
@@ -420,6 +427,14 @@ def _port_attrs(port: UniFiPort, device: UniFiDevice | None, coordinator: UniFiI
         "admin_control_allowed": coordinator.can_change_port(port.key),
         "rx_bytes": _port_number(raw, "rx_bytes"),
         "tx_bytes": _port_number(raw, "tx_bytes"),
+        "rx_rate_bps": _port_number(raw, "rx_rate"),
+        "tx_rate_bps": _port_number(raw, "tx_rate"),
+        "rx_rate_bytes_per_second": _port_number(raw, "rx_bytes-r"),
+        "tx_rate_bytes_per_second": _port_number(raw, "tx_bytes-r"),
+        "rx_errors": _port_number(raw, "rx_errors"),
+        "tx_errors": _port_number(raw, "tx_errors"),
+        "rx_dropped": _port_number(raw, "rx_dropped"),
+        "tx_dropped": _port_number(raw, "tx_dropped"),
         "lldp_neighbors": _port_lldp_neighbors(port, device),
     }
     return {key: value for key, value in attrs.items() if value not in (None, "", [])}
@@ -454,6 +469,14 @@ def _port_poe_power_w(port: dict[str, Any]) -> int | float | None:
         return value
     value = _port_number(port, "poe_power_mw")
     return value / 1000 if value is not None else None
+
+
+def _port_poe_capable(port: dict[str, Any]) -> bool | None:
+    """Return whether the port is PoE capable."""
+    if (value := _port_bool(port, "port_poe", "poe_capable", "is_poe")) is not None:
+        return value
+    poe_caps = _port_number(port, "poe_caps")
+    return poe_caps > 0 if poe_caps is not None else None
 
 
 def _port_bool(port: dict[str, Any], *keys: str) -> bool | None:
@@ -893,7 +916,7 @@ class UniFiPortSpeedSensor(CoordinatorEntity[UniFiInfrastructureCoordinator], Se
         super().__init__(coordinator)
         self.port_key = port_key
         self._attr_unique_id = f"{port_key}_speed"
-        self._attr_name = f"{self.port.name} Speed" if self.port is not None else "Port Speed"
+        self._attr_name = self.port.name if self.port is not None else "Port"
 
     @property
     def port(self) -> UniFiPort | None:

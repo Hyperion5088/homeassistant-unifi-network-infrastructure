@@ -184,6 +184,8 @@ def _async_migrate_entity_ids(
             continue
         if _async_migrate_wan_sensor_entity_id(registry, entity, coordinator):
             continue
+        if _async_migrate_port_speed_sensor_entity_id(registry, entity, coordinator):
+            continue
         unique_id = str(entity.unique_id or "")
         device_key = ""
         suffix = ""
@@ -233,6 +235,32 @@ def _async_migrate_wan_sensor_entity_id(
         return False
     desired_name = f"{wan.name} IP Address"
     desired_entity_id = f"sensor.{slugify(device.name)}_{slugify(wan.name)}_ip_address"
+    updates: dict[str, object | None] = {"original_name": desired_name}
+    if entity.entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
+        updates["new_entity_id"] = desired_entity_id
+    registry.async_update_entity(entity.entity_id, **updates)
+    return True
+
+
+def _async_migrate_port_speed_sensor_entity_id(
+    registry: er.EntityRegistry,
+    entity: er.RegistryEntry,
+    coordinator: UniFiInfrastructureCoordinator,
+) -> bool:
+    """Shorten port speed sensor names now that speed is the state."""
+    unique_id = str(entity.unique_id or "")
+    suffix = "_speed"
+    if not unique_id.endswith(suffix):
+        return False
+    port_key = unique_id[: -len(suffix)]
+    port = coordinator.data.ports.get(port_key)
+    if port is None:
+        return False
+    device = coordinator.data.devices.get(port.device_key)
+    if device is None:
+        return False
+    desired_name = port.name
+    desired_entity_id = f"sensor.{slugify(device.name)}_{slugify(port.name)}"
     updates: dict[str, object | None] = {"original_name": desired_name}
     if entity.entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
         updates["new_entity_id"] = desired_entity_id

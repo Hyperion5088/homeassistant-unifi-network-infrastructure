@@ -640,7 +640,7 @@ def _port_name(port: dict[str, Any], port_idx: int) -> str:
 
 def _poe_enabled(port: dict[str, Any]) -> bool | None:
     """Return whether PoE is enabled when the controller exposes it."""
-    for key in ("port_poe", "poe_enable", "poe_enabled"):
+    for key in ("poe_enable", "poe_enabled"):
         value = _bool_value(port.get(key))
         if value is not None:
             return value

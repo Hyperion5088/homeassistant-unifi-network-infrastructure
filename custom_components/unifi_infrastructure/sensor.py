@@ -338,35 +338,30 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         options=STATE_OPTIONS,
         value_fn=_device_state,
         attr_fn=_state_attrs,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="ip_address",
         name="IP Address",
         translation_key="ip_address",
         value_fn=lambda device: device.ip,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="mac_address",
         name="MAC Address",
         translation_key="mac_address",
         value_fn=lambda device: device.mac,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="serial_number",
         name="Serial Number",
         translation_key="serial_number",
         value_fn=lambda device: device.serial,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="model",
         name="Model",
         translation_key="model",
         value_fn=lambda device: device.model,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="cpu_usage",
@@ -374,7 +369,6 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         translation_key="cpu_usage",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda device: _number(device, "system-stats.cpu", "cpu"),
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="memory_usage",
@@ -382,7 +376,6 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         translation_key="memory_usage",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda device: _number(device, "system-stats.mem", "mem"),
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="temperature",
@@ -391,7 +384,6 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         device_class=SensorDeviceClass.TEMPERATURE,
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         value_fn=_temperature,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="fan_level",
@@ -399,21 +391,18 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         translation_key="fan_level",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=_fan_level,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="fan_summary",
         name="Fan Summary",
         translation_key="fan_summary",
         value_fn=_fan_summary,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="uptime",
         name="Uptime",
         translation_key="uptime",
         value_fn=_uptime_display,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="last_seen",
@@ -421,7 +410,6 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         translation_key="last_seen",
         device_class=SensorDeviceClass.TIMESTAMP,
         value_fn=_last_seen,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="load_average_1_min",
@@ -452,14 +440,12 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         name="Firmware",
         translation_key="firmware",
         value_fn=lambda device: device.firmware,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="update_status",
         name="Update Status",
         translation_key="update_status",
         value_fn=_update_state,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="port_count",
@@ -467,7 +453,6 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         translation_key="port_count",
         value_fn=_port_count,
         device_kinds=SWITCH_KINDS | GATEWAY_KINDS,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="radio_count",
@@ -475,7 +460,6 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         translation_key="radio_count",
         value_fn=_ap_radio_count,
         device_kinds=AP_KINDS,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="vap_count",
@@ -483,14 +467,12 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         translation_key="vap_count",
         value_fn=_ap_vap_count,
         device_kinds=AP_KINDS,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="connected_clients",
         name="Connected Clients",
         translation_key="connected_clients",
         value_fn=_client_count,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="rx_bytes",
@@ -531,7 +513,6 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         translation_key="uplink",
         value_fn=_uplink_summary,
         attr_fn=_uplink_attrs,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="radio_summary",
@@ -540,7 +521,6 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         value_fn=_radio_details_state,
         attr_fn=lambda device: _radio_attrs(device) or {},
         device_kinds=AP_KINDS,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
 )
 

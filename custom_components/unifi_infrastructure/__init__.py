@@ -5,6 +5,7 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity import EntityCategory
@@ -89,13 +90,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinator,
         disable_existing_default_entities=should_disable_existing_defaults,
     )
+    _async_migrate_device_names(hass, coordinator)
     if should_disable_existing_defaults:
         hass.config_entries.async_update_entry(
             entry,
             options={**entry.options, DEFAULT_DISABLED_MIGRATION_OPTION: True},
         )
     entry.async_on_unload(
-        async_call_later(hass, 10, lambda _: _async_migrate_entity_ids(hass, entry, coordinator))
+        async_call_later(hass, 10, lambda _: _async_migrate_registries(hass, entry, coordinator))
+    )
+    entry.async_on_unload(
+        coordinator.async_add_listener(lambda: _async_migrate_registries(hass, entry, coordinator))
     )
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
@@ -115,6 +120,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload the entry when options change."""
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+def _async_migrate_registries(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: UniFiInfrastructureCoordinator,
+) -> None:
+    """Refresh entity and device registry metadata after startup."""
+    _async_migrate_entity_ids(hass, entry, coordinator)
+    _async_migrate_device_names(hass, coordinator)
 
 
 def _async_migrate_entity_ids(
@@ -160,6 +175,11 @@ def _async_migrate_entity_ids(
         if entity.entity_id.startswith("lock."):
             _async_migrate_lock_entity_id(registry, entity, coordinator)
             continue
+        if entity.entity_id.startswith("switch."):
+            _async_migrate_wlan_switch_entity_id(registry, entity, coordinator)
+            continue
+        if _async_migrate_wan_sensor_entity_id(registry, entity, coordinator):
+            continue
         unique_id = str(entity.unique_id or "")
         device_key = ""
         suffix = ""
@@ -188,6 +208,82 @@ def _async_migrate_entity_ids(
         if entity.entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
             updates["new_entity_id"] = desired_entity_id
         registry.async_update_entity(entity.entity_id, **updates)
+
+
+def _async_migrate_wan_sensor_entity_id(
+    registry: er.EntityRegistry,
+    entity: er.RegistryEntry,
+    coordinator: UniFiInfrastructureCoordinator,
+) -> bool:
+    """Shorten WAN IP sensor entity IDs."""
+    unique_id = str(entity.unique_id or "")
+    suffix = "_ip_address"
+    if not unique_id.endswith(suffix):
+        return False
+    wan_key = unique_id[: -len(suffix)]
+    wan = coordinator.data.wans.get(wan_key)
+    if wan is None:
+        return False
+    device = coordinator.data.devices.get(wan.device_key)
+    if device is None:
+        return False
+    desired_name = f"{wan.name} IP Address"
+    desired_entity_id = f"sensor.{slugify(device.name)}_{slugify(wan.name)}_ip_address"
+    updates: dict[str, object | None] = {"original_name": desired_name}
+    if entity.entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
+        updates["new_entity_id"] = desired_entity_id
+    registry.async_update_entity(entity.entity_id, **updates)
+    return True
+
+
+def _async_migrate_wlan_switch_entity_id(
+    registry: er.EntityRegistry,
+    entity: er.RegistryEntry,
+    coordinator: UniFiInfrastructureCoordinator,
+) -> None:
+    """Shorten WLAN/SSID switch entity IDs."""
+    unique_id = str(entity.unique_id or "")
+    prefix = "wlan_"
+    suffix = "_enabled"
+    if not unique_id.startswith(prefix) or not unique_id.endswith(suffix):
+        return
+    wlan_id = unique_id[len(prefix) : -len(suffix)]
+    wlan = coordinator.data.wlans.get(wlan_id)
+    router_key = coordinator.data.router_device_key
+    router = coordinator.data.devices.get(router_key) if router_key is not None else None
+    if wlan is None or router is None:
+        return
+    desired_name = f"SSID {wlan.name}"
+    desired_entity_id = f"switch.{slugify(router.name)}_ssid_{slugify(wlan.name)}"
+    updates: dict[str, object | None] = {"original_name": desired_name}
+    if entity.entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
+        updates["new_entity_id"] = desired_entity_id
+    registry.async_update_entity(entity.entity_id, **updates)
+
+
+def _async_migrate_device_names(
+    hass: HomeAssistant,
+    coordinator: UniFiInfrastructureCoordinator,
+) -> None:
+    """Shorten existing UniFi device registry names."""
+    registry = dr.async_get(hass)
+    for entry in list(registry.devices.values()):
+        if not entry.identifiers:
+            continue
+        device_key = next(
+            (
+                identifier
+                for domain, identifier in entry.identifiers
+                if domain == DOMAIN
+            ),
+            None,
+        )
+        if device_key is None:
+            continue
+        device = coordinator.data.devices.get(device_key)
+        if device is None or entry.name == device.name:
+            continue
+        registry.async_update_device(entry.id, name=device.name)
 
 
 def _async_migrate_lock_entity_id(

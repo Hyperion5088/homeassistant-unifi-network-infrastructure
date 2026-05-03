@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .coordinator import AUTO_PROTECT_SECONDS, UniFiInfrastructureCoordinator, UniFiPort
 from .const import DOMAIN
+from .options import port_protection_enabled
 
 
 async def async_setup_entry(
@@ -21,6 +22,8 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up UniFi Network Infrastructure lock entities."""
+    if not port_protection_enabled(entry):
+        return
     coordinator: UniFiInfrastructureCoordinator = hass.data[DOMAIN][entry.entry_id]
     known_ports: set[str] = set()
 

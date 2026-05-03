@@ -1,0 +1,35 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "sections": {
+          "controller_settings": "mdi:server-network"
+        }
+      },
+      "control_options": {
+        "sections": {
+          "monitoring_settings": "mdi:poll",
+          "protection_settings": "mdi:lock",
+          "wifi_controls": "mdi:wifi-cog",
+          "port_controls": "mdi:ethernet",
+          "router_policy_controls": "mdi:shield-alert",
+          "device_maintenance_controls": "mdi:tools"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "sections": {
+          "controller_settings": "mdi:server-network",
+          "protection_settings": "mdi:lock",
+          "wifi_controls": "mdi:wifi-cog",
+          "port_controls": "mdi:ethernet",
+          "router_policy_controls": "mdi:shield-alert",
+          "device_maintenance_controls": "mdi:tools"
+        }
+      }
+    }
+  }
+}

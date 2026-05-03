@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
 import logging
 import re
+import time
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -19,6 +21,7 @@ from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 
 LOGGER = logging.getLogger(__name__)
 AUTO_PROTECT_SECONDS = 15 * 60
+PENDING_ADMIN_STATE_SECONDS = 20
 PORT_DEVICE_KINDS = {"usw", "udm", "ugw"}
 DOMAIN_LABEL_PATTERN = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
 DOMAIN_NAME_RE = re.compile(
@@ -69,6 +72,7 @@ class UniFiInfrastructureData:
     wlans: dict[str, "UniFiWlan"]
     port_forwards: dict[str, "UniFiPortForward"]
     traffic_routes: dict[str, "UniFiTrafficRoute"]
+    firewall_policies: dict[str, "UniFiFirewallPolicy"]
     router_device_key: str | None
 
 
@@ -135,6 +139,19 @@ class UniFiTrafficRoute:
     raw: dict[str, Any]
 
 
+@dataclass(slots=True)
+class UniFiFirewallPolicy:
+    """Normalized UniFi firewall policy."""
+
+    key: str
+    name: str
+    enabled: bool | None
+    action: str | None
+    index: int | None
+    logging: bool | None
+    raw: dict[str, Any]
+
+
 class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureData]):
     """Fetch UniFi infrastructure device data."""
 
@@ -144,6 +161,7 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
         client: UniFiInfrastructureClient,
         scan_interval: int,
         storage_key: str | None = None,
+        port_protection_enabled: bool = True,
     ) -> None:
         """Initialize the coordinator."""
         super().__init__(
@@ -153,8 +171,12 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
             update_interval=timedelta(seconds=scan_interval) if scan_interval > 0 else DEFAULT_SCAN_INTERVAL,
         )
         self.client = client
+        self.port_protection_enabled = port_protection_enabled
+        self._reboot_confirmation = "Cancel"
         self._manually_locked_ports: set[str] = set()
         self._temporarily_unlocked_ports: set[str] = set()
+        self._router_port_restore_overrides: dict[str, dict[str, Any]] = {}
+        self._pending_admin_states: dict[str, tuple[bool, float]] = {}
         self._auto_protect_timers: dict[str, Callable[[], None]] = {}
         self._store: Store[dict[str, Any]] | None = (
             Store(hass, 1, f"{DOMAIN}.{storage_key}") if storage_key else None
@@ -172,6 +194,13 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
             for port_key in stored.get("manually_locked_ports", [])
             if port_key not in (None, "")
         }
+        restore_overrides = stored.get("router_port_restore_overrides")
+        if isinstance(restore_overrides, dict):
+            self._router_port_restore_overrides = {
+                str(port_key): dict(override)
+                for port_key, override in restore_overrides.items()
+                if isinstance(override, dict)
+            }
 
     def _schedule_save_state(self) -> None:
         """Persist local control state without blocking entity updates."""
@@ -185,6 +214,7 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
         await self._store.async_save(
             {
                 "manually_locked_ports": sorted(self._manually_locked_ports),
+                "router_port_restore_overrides": self._router_port_restore_overrides,
             }
         )
 
@@ -197,6 +227,11 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
             traffic_routes = await self.client.async_get_traffic_routes()
         except UniFiInfrastructureError as err:
             raise UpdateFailed(str(err)) from err
+        try:
+            firewall_policies = await self.client.async_get_firewall_policies()
+        except UniFiInfrastructureError as err:
+            LOGGER.debug("UniFi firewall policies are not available from this controller: %s", err)
+            firewall_policies = []
         normalized = [_normalize_device(device) for device in devices]
         normalized_wlans: list[UniFiWlan] = []
         for wlan in wlans:
@@ -210,14 +245,20 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
         for route in traffic_routes:
             if (normalized_route := _normalize_traffic_route(route)) is not None:
                 normalized_traffic_routes.append(normalized_route)
+        normalized_firewall_policies: list[UniFiFirewallPolicy] = []
+        for policy in firewall_policies:
+            if (normalized_policy := _normalize_firewall_policy(policy)) is not None:
+                normalized_firewall_policies.append(normalized_policy)
         device_map = {device.key: device for device in normalized}
+        ports = self._apply_pending_admin_states(_normalize_ports(normalized))
         return UniFiInfrastructureData(
             devices=device_map,
-            ports=_normalize_ports(normalized),
+            ports=ports,
             wans=_normalize_wans(normalized),
             wlans={wlan.key: wlan for wlan in normalized_wlans},
             port_forwards={rule.key: rule for rule in normalized_port_forwards},
             traffic_routes={route.key: route for route in normalized_traffic_routes},
+            firewall_policies={policy.key: policy for policy in normalized_firewall_policies},
             router_device_key=_router_device_key(device_map),
         )
 
@@ -242,8 +283,182 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
         await self.client.async_set_traffic_route_enabled(route.raw, enabled)
         await self.async_request_refresh()
 
+    async def async_set_firewall_policy_enabled(self, policy_id: str, enabled: bool) -> None:
+        """Enable or disable a firewall policy and refresh data."""
+        policy = self.data.firewall_policies.get(policy_id) if self.data is not None else None
+        if policy is None:
+            raise UniFiInfrastructureError("Firewall policy is no longer available")
+        await self.client.async_set_firewall_policy_enabled(policy.raw, enabled)
+        await self.async_request_refresh()
+
+    async def async_set_port_enabled(self, port_key: str, enabled: bool) -> None:
+        """Enable or disable a switch/router port."""
+        port = self._port_for_write(port_key)
+        device = self._device_for_port(port)
+        changes = self._port_admin_changes(device, port, enabled)
+        await self.client.async_update_port_override(
+            device,
+            port,
+            changes,
+        )
+        self._set_pending_admin_state(port.key, enabled)
+        self._schedule_save_state()
+        await self.async_request_refresh()
+
+    async def async_bounce_port(self, port_key: str, delay: int = 5) -> None:
+        """Disable and re-enable a switch/router port."""
+        await self.async_set_port_enabled(port_key, False)
+        await asyncio.sleep(delay)
+        await self.async_set_port_enabled(port_key, True)
+
+    async def async_set_port_poe_enabled(self, port_key: str, enabled: bool) -> None:
+        """Enable or disable PoE on a switch/router port."""
+        port = self._port_for_write(port_key)
+        if not _port_poe_capable(port.raw):
+            raise UniFiInfrastructureError("Port is not PoE capable")
+        await self.client.async_update_port_override(
+            self._device_for_port(port),
+            port,
+            {"poe_mode": "auto" if enabled else "off"},
+        )
+        await self.async_request_refresh()
+
+    async def async_reset_port_poe(self, port_key: str, delay: int = 5) -> None:
+        """Power-cycle PoE on a switch/router port."""
+        await self.async_set_port_poe_enabled(port_key, False)
+        await asyncio.sleep(delay)
+        await self.async_set_port_poe_enabled(port_key, True)
+
+    async def async_locate_device(self, device_key: str, seconds: int = 30) -> None:
+        """Flash a UniFi device locate LED for a short period."""
+        device = self.data.devices.get(device_key) if self.data is not None else None
+        if device is None or device.mac is None:
+            raise UniFiInfrastructureError("Device is no longer available")
+        await self.client.async_set_device_locate(device.mac, True)
+
+        async def _turn_off() -> None:
+            try:
+                await self.client.async_set_device_locate(device.mac, False)
+            except UniFiInfrastructureError as err:
+                LOGGER.warning("Could not clear UniFi locate LED for %s: %s", device.name, err)
+
+        def _schedule_clear(_: Any) -> None:
+            self.hass.create_task(_turn_off())
+
+        async_call_later(self.hass, seconds, _schedule_clear)
+
+    async def async_reboot_device(self, device_key: str) -> None:
+        """Reboot a UniFi device after explicit confirmation."""
+        if not self.reboot_armed():
+            raise UniFiInfrastructureError("Reboot confirmation is not armed")
+        self.set_reboot_confirmation("Cancel")
+        device = self.data.devices.get(device_key) if self.data is not None else None
+        if device is None or device.mac is None:
+            raise UniFiInfrastructureError("Device is no longer available")
+        await self.client.async_reboot_device(device.mac)
+
+    @property
+    def reboot_confirmation(self) -> str:
+        """Return the current reboot confirmation state."""
+        return self._reboot_confirmation
+
+    def set_reboot_confirmation(self, option: str) -> None:
+        """Arm or disarm reboot controls."""
+        self._reboot_confirmation = option if option == "Reboot" else "Cancel"
+        self.async_update_listeners()
+
+    def reboot_armed(self) -> bool:
+        """Return whether device reboot actions are armed."""
+        return self._reboot_confirmation == "Reboot"
+
+    def _port_for_write(self, port_key: str) -> UniFiPort:
+        """Return a writable port or raise."""
+        port = self.data.ports.get(port_key) if self.data is not None else None
+        if port is None:
+            raise UniFiInfrastructureError("Port is no longer available")
+        if not self.can_change_port(port_key):
+            raise UniFiInfrastructureError("Port protection is locked")
+        return port
+
+    def _device_for_port(self, port: UniFiPort) -> UniFiDevice:
+        """Return a port's parent device or raise."""
+        device = self.data.devices.get(port.device_key) if self.data is not None else None
+        if device is None:
+            raise UniFiInfrastructureError("Device is no longer available")
+        return device
+
+    def _set_pending_admin_state(self, port_key: str, enabled: bool) -> None:
+        """Temporarily prefer a just-requested admin state while UniFi converges."""
+        self._pending_admin_states[port_key] = (
+            enabled,
+            time.monotonic() + PENDING_ADMIN_STATE_SECONDS,
+        )
+
+    def _apply_pending_admin_states(self, ports: dict[str, UniFiPort]) -> dict[str, UniFiPort]:
+        """Overlay recent admin-control requests until the controller settles."""
+        now = time.monotonic()
+        expired = [
+            port_key
+            for port_key, (_, expires) in self._pending_admin_states.items()
+            if expires <= now
+        ]
+        for port_key in expired:
+            self._pending_admin_states.pop(port_key, None)
+        for port_key, (enabled, _) in list(self._pending_admin_states.items()):
+            port = ports.get(port_key)
+            if port is None:
+                self._pending_admin_states.pop(port_key, None)
+                continue
+            if port.enabled is enabled:
+                self._pending_admin_states.pop(port_key, None)
+                continue
+            ports[port_key] = UniFiPort(
+                key=port.key,
+                device_key=port.device_key,
+                port_idx=port.port_idx,
+                name=port.name,
+                enabled=enabled,
+                up=port.up,
+                is_uplink=port.is_uplink,
+                protection_reasons=port.protection_reasons,
+                speed_mbps=port.speed_mbps,
+                poe_enabled=port.poe_enabled,
+                raw=port.raw,
+            )
+        return ports
+
+    def _port_admin_changes(
+        self,
+        device: UniFiDevice,
+        port: UniFiPort,
+        enabled: bool,
+    ) -> dict[str, Any]:
+        """Return port admin override changes for a UniFi device family."""
+        if device.kind not in {"udm", "ugw"}:
+            return {_port_admin_write_key(port.raw): enabled}
+
+        if enabled:
+            restore = self._router_port_restore_overrides.pop(
+                port.key,
+                _router_port_enable_fallback(port.raw),
+            )
+            return dict(restore)
+
+        if port.raw.get("forward") != "disabled" and port.key not in self._router_port_restore_overrides:
+            self._router_port_restore_overrides[port.key] = _router_port_restore_override(device, port)
+        return {
+            "forward": "disabled",
+            "native_networkconf_id": "",
+            "tagged_vlan_mgmt": "block_all",
+            "op_mode": None,
+            "port_security_enabled": True,
+            "port_security_mac_address": [],
+        }
+
     def is_port_locked(self, port_key: str) -> bool:
         """Return whether port configuration controls are protected."""
+        if not self.port_protection_enabled:
+            return False
         return port_key in self._manually_locked_ports or (
             self.is_port_auto_protected(port_key) and port_key not in self._temporarily_unlocked_ports
         )
@@ -270,6 +485,8 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
 
     def lock_port(self, port_key: str) -> None:
         """Protect a port immediately."""
+        if not self.port_protection_enabled:
+            return
         self._temporarily_unlocked_ports.discard(port_key)
         if not self.is_port_auto_protected(port_key):
             self._manually_locked_ports.add(port_key)
@@ -279,6 +496,8 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
 
     def unlock_port(self, port_key: str) -> None:
         """Temporarily allow configuration changes on an auto-protected port."""
+        if not self.port_protection_enabled:
+            return
         self._manually_locked_ports.discard(port_key)
         if self.is_port_auto_protected(port_key):
             self._temporarily_unlocked_ports.add(port_key)
@@ -370,7 +589,7 @@ def _normalize_ports(devices: list[UniFiDevice]) -> dict[str, UniFiPort]:
                 device_key=device.key,
                 port_idx=port_idx,
                 name=_port_name(row, port_idx),
-                enabled=_bool_value(row.get("enabled")),
+                enabled=_port_enabled(row),
                 up=_bool_value(row.get("up")),
                 is_uplink=row.get("is_uplink") is True,
                 protection_reasons=tuple(protection_reasons.get(key, ())),
@@ -602,6 +821,31 @@ def _normalize_traffic_route(route: dict[str, Any]) -> UniFiTrafficRoute | None:
     )
 
 
+def _normalize_firewall_policy(policy: dict[str, Any]) -> UniFiFirewallPolicy | None:
+    """Normalize a user-editable UniFi firewall policy."""
+    if policy.get("predefined") is True:
+        return None
+    if policy.get("origin_type") not in (None, ""):
+        return None
+    key = _first_string(policy, "_id", "id")
+    name = _first_string(policy, "name", "description")
+    if key is None or name is None:
+        return None
+    if name.lower().startswith("ips deny list"):
+        return None
+    enabled = policy.get("enabled")
+    logging_enabled = policy.get("logging")
+    return UniFiFirewallPolicy(
+        key=key,
+        name=name,
+        enabled=enabled if isinstance(enabled, bool) else None,
+        action=_first_string(policy, "action"),
+        index=_int_value(policy.get("index")),
+        logging=logging_enabled if isinstance(logging_enabled, bool) else None,
+        raw=policy,
+    )
+
+
 def _router_device_key(devices: dict[str, UniFiDevice]) -> str | None:
     """Return the preferred router/gateway device key for WLAN controls."""
     for device in devices.values():
@@ -653,6 +897,89 @@ def _poe_enabled(port: dict[str, Any]) -> bool | None:
         if value is not None:
             return value
     return None
+
+
+def _port_enabled(port: dict[str, Any]) -> bool:
+    """Return whether a port is administratively enabled."""
+    if _router_port_disabled_by_profile(port):
+        return False
+    for key in ("enabled", "enable", "port_enabled", "admin_enabled"):
+        value = _bool_value(port.get(key))
+        if value is not None:
+            return value
+    for key in ("disabled", "port_disabled", "admin_disabled"):
+        value = _bool_value(port.get(key))
+        if value is not None:
+            return not value
+    return True
+
+
+def _router_port_disabled_by_profile(port: dict[str, Any]) -> bool:
+    """Return whether a router port is disabled through UniFi's port profile shape."""
+    return (
+        port.get("forward") == "disabled"
+        or (
+            port.get("native_networkconf_id") == ""
+            and port.get("tagged_vlan_mgmt") == "block_all"
+            and port.get("port_security_enabled") is True
+        )
+    )
+
+
+def _port_admin_write_key(port: dict[str, Any]) -> str:
+    """Return the UniFi admin-state key to write back for this port."""
+    for key in ("enabled", "enable", "port_enabled", "admin_enabled"):
+        if key in port:
+            return key
+    return "enabled"
+
+
+def _router_port_restore_override(device: UniFiDevice, port: UniFiPort) -> dict[str, Any]:
+    """Return the current router port override so admin enable can restore it."""
+    override = _port_override_row(device, port)
+    if override is not None:
+        return dict(override)
+    return _router_port_enable_fallback(port.raw)
+
+
+def _router_port_enable_fallback(port: dict[str, Any]) -> dict[str, Any]:
+    """Return a conservative router port enable override when no prior state was saved."""
+    override = {
+        "port_idx": _int_value(port.get("port_idx")) or _int_value(port.get("port")),
+        "name": _first_string(port, "name"),
+        "autoneg": port.get("autoneg", True),
+        "forward": port.get("forward") if port.get("forward") not in (None, "", "disabled") else "all",
+        "native_networkconf_id": port.get("native_networkconf_id") or None,
+        "tagged_vlan_mgmt": port.get("tagged_vlan_mgmt") if port.get("tagged_vlan_mgmt") not in (None, "", "block_all") else "auto",
+        "port_security_enabled": False,
+        "port_security_mac_address": [],
+        "isolation": False,
+        "setting_preference": port.get("setting_preference") or "auto",
+    }
+    return {key: value for key, value in override.items() if value not in (None, "")}
+
+
+def _port_override_row(device: UniFiDevice, port: UniFiPort) -> dict[str, Any] | None:
+    """Return the raw port override row for a device port."""
+    overrides = device.raw.get("port_overrides")
+    if not isinstance(overrides, list):
+        return None
+    for row in overrides:
+        if not isinstance(row, dict):
+            continue
+        if _int_value(row.get("port_idx")) == port.port_idx:
+            return row
+    return None
+
+
+def _port_poe_capable(port: dict[str, Any]) -> bool:
+    """Return whether a UniFi port reports PoE capability."""
+    if (value := _bool_value(port.get("port_poe"))) is not None:
+        return value
+    if (value := _bool_value(port.get("poe_capable"))) is not None:
+        return value
+    poe_caps = _int_value(port.get("poe_caps"))
+    return bool(poe_caps and poe_caps > 0)
 
 
 def _bool_value(value: Any) -> bool | None:

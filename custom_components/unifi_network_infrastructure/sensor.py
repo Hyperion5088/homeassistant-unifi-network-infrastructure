@@ -175,6 +175,98 @@ def _ap_vap_count(device: UniFiDevice) -> int | None:
     return None
 
 
+def _ap_broadcast_ssid_count(device: UniFiDevice) -> int | None:
+    """Return the number of unique SSIDs currently broadcast by an AP."""
+    ssids = _ap_broadcast_ssids(device)
+    if ssids is None:
+        return None
+    return len(ssids)
+
+
+def _ap_broadcast_ssid_attrs(device: UniFiDevice) -> dict[str, Any] | None:
+    """Return SSID broadcast details grouped from AP VAP rows."""
+    ssids = _ap_broadcast_ssids(device)
+    if ssids is None:
+        return None
+    return {
+        "ssids": ssids,
+        "ssid_names": [ssid["ssid"] for ssid in ssids],
+        "vap_instances": sum(len(ssid.get("vap_interfaces", ())) for ssid in ssids),
+        "source": "vap_table grouped by essid",
+    }
+
+
+def _ap_broadcast_ssids(device: UniFiDevice) -> list[dict[str, Any]] | None:
+    """Return active VAP rows grouped by unique SSID."""
+    vaps = device.raw.get("vap_table")
+    if not isinstance(vaps, list):
+        return None
+    grouped: dict[str, dict[str, Any]] = {}
+    for vap in vaps:
+        if not isinstance(vap, dict) or not _vap_is_broadcasting(vap):
+            continue
+        ssid = vap.get("essid") or vap.get("ssid")
+        if not isinstance(ssid, str) or not ssid:
+            continue
+        detail = grouped.setdefault(
+            ssid,
+            {
+                "ssid": ssid,
+                "bands": set(),
+                "radios": set(),
+                "bssids": set(),
+                "vap_interfaces": set(),
+                "wlanconf_ids": set(),
+                "states": set(),
+                "is_guest": vap.get("is_guest"),
+                "client_count": 0,
+            },
+        )
+        if (band := _radio_band(vap.get("radio"))) != "unknown":
+            detail["bands"].add(band)
+        if radio := vap.get("radio_name"):
+            detail["radios"].add(radio)
+        if bssid := vap.get("bssid"):
+            detail["bssids"].add(bssid)
+        if interface := vap.get("name"):
+            detail["vap_interfaces"].add(interface)
+        if wlanconf_id := vap.get("wlanconf_id"):
+            detail["wlanconf_ids"].add(wlanconf_id)
+        if state := vap.get("state"):
+            detail["states"].add(str(state))
+        if vap.get("is_guest") is True:
+            detail["is_guest"] = True
+        if isinstance(vap.get("num_sta"), int | float):
+            detail["client_count"] += int(vap["num_sta"])
+    results: list[dict[str, Any]] = []
+    for ssid in sorted(grouped):
+        detail = grouped[ssid]
+        normalized = {
+            "ssid": detail["ssid"],
+            "bands": sorted(detail["bands"]),
+            "radios": sorted(detail["radios"]),
+            "bssids": sorted(detail["bssids"]),
+            "vap_interfaces": sorted(detail["vap_interfaces"]),
+            "wlanconf_ids": sorted(detail["wlanconf_ids"]),
+            "states": sorted(detail["states"]),
+            "is_guest": detail["is_guest"],
+            "client_count": detail["client_count"],
+            "broadcasting": True,
+        }
+        results.append({key: value for key, value in normalized.items() if value not in (None, "", [], set())})
+    return results
+
+
+def _vap_is_broadcasting(vap: dict[str, Any]) -> bool:
+    """Return whether a UniFi VAP row looks actively broadcast."""
+    if vap.get("up") is False or vap.get("enabled") is False:
+        return False
+    state = vap.get("state")
+    if state not in (None, "") and str(state).upper() not in {"RUN", "UP"}:
+        return False
+    return True
+
+
 def _last_seen(device: UniFiDevice) -> datetime | None:
     """Return last seen timestamp."""
     value = _int(device, "last_seen")
@@ -397,6 +489,61 @@ def _port_speed_value(port: UniFiPort) -> str:
     return f"{port.speed_mbps} Mbps"
 
 
+def _port_sensor_name(port: UniFiPort | None) -> str:
+    """Return a grouped port sensor name."""
+    if port is None:
+        return "Port"
+    media_group = _port_media_group(port.raw, port.name)
+    label = _short_port_label(port.name)
+    if media_group == "Port":
+        return f"Port {label}"
+    return f"Port {media_group} {label}"
+
+
+def _port_media_group(raw: dict[str, Any], name: str = "") -> str:
+    """Return the HA display group for a port row."""
+    media_text = " ".join(
+        str(value)
+        for value in (
+            name,
+            raw.get("media"),
+            raw.get("media_type"),
+            raw.get("port_type"),
+            raw.get("type"),
+            raw.get("connector"),
+            raw.get("connector_type"),
+            raw.get("interface_type"),
+            raw.get("ifname"),
+            raw.get("name"),
+            raw.get("label"),
+        )
+        if value not in (None, "")
+    ).lower()
+    for marker, label in (
+        ("qsfp28", "QSFP28"),
+        ("qsfp+", "QSFP+"),
+        ("qsfp", "QSFP"),
+        ("sfp28", "SFP28"),
+        ("sfp+", "SFP+"),
+        ("sfp", "SFP"),
+    ):
+        if marker in media_text:
+            return label
+    if any(marker in media_text for marker in ("fiber", "fibre")):
+        return "SFP"
+    return "Port"
+
+
+def _short_port_label(name: str) -> str:
+    """Return a port label without duplicate grouping text."""
+    label = str(name).strip()
+    lowered = label.lower()
+    for prefix in ("port ", "qsfp28 ", "qsfp+ ", "qsfp ", "sfp28 ", "sfp+ ", "sfp "):
+        if lowered.startswith(prefix):
+            return label[len(prefix) :].strip() or label
+    return label
+
+
 def _port_attrs(port: UniFiPort, device: UniFiDevice | None, coordinator: UniFiInfrastructureCoordinator) -> dict[str, Any]:
     """Return detailed port attributes."""
     raw = port.raw
@@ -538,24 +685,27 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="mac_address",
-        name="MAC Address",
+        name="System MAC Address",
         translation_key="mac_address",
         icon="mdi:identifier",
         value_fn=lambda device: device.mac,
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="serial_number",
-        name="Serial Number",
+        name="System Serial Number",
         translation_key="serial_number",
         icon="mdi:barcode",
         value_fn=lambda device: device.serial,
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="model",
-        name="Model",
+        name="System Model",
         translation_key="model",
         icon="mdi:router-network",
         value_fn=lambda device: device.model,
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="cpu_usage",
@@ -583,6 +733,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         value_fn=_temperature,
         attr_fn=_temperature_attrs,
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="fan_level",
@@ -653,6 +804,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         translation_key="firmware",
         icon="mdi:chip",
         value_fn=lambda device: device.firmware,
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="update_status",
@@ -660,6 +812,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         translation_key="update_status",
         icon="mdi:update",
         value_fn=_update_state,
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="port_count",
@@ -668,6 +821,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         icon="mdi:ethernet",
         value_fn=_port_count,
         device_kinds=SWITCH_KINDS | GATEWAY_KINDS,
+        entity_registry_enabled_default=False,
     ),
     UniFiSensorDescription(
         key="radio_count",
@@ -688,6 +842,15 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
         entity_registry_enabled_default=False,
     ),
     UniFiSensorDescription(
+        key="broadcast_ssids",
+        name="Broadcast SSIDs",
+        translation_key="broadcast_ssids",
+        icon="mdi:wifi-check",
+        value_fn=_ap_broadcast_ssid_count,
+        attr_fn=lambda device: _ap_broadcast_ssid_attrs(device) or {},
+        device_kinds=AP_KINDS,
+    ),
+    UniFiSensorDescription(
         key="connected_clients",
         name="Connected Clients",
         translation_key="connected_clients",
@@ -696,7 +859,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="rx_bytes",
-        name="Received Traffic",
+        name="Traffic Received",
         translation_key="rx_bytes",
         icon="mdi:download-network",
         value_fn=lambda device: _traffic_value(device, "rx_bytes"),
@@ -705,7 +868,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="tx_bytes",
-        name="Transmitted Traffic",
+        name="Traffic Transmitted",
         translation_key="tx_bytes",
         icon="mdi:upload-network",
         value_fn=lambda device: _traffic_value(device, "tx_bytes"),
@@ -714,7 +877,7 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="total_bytes",
-        name="Total Traffic",
+        name="Traffic Total",
         translation_key="total_bytes",
         icon="mdi:swap-horizontal-bold",
         value_fn=lambda device: _traffic_value(device, "bytes"),
@@ -723,11 +886,12 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
     ),
     UniFiSensorDescription(
         key="uplink",
-        name="Uplink",
+        name="System Uplink",
         translation_key="uplink",
         icon="mdi:lan-connect",
         value_fn=_uplink_summary,
         attr_fn=_uplink_attrs,
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     UniFiSensorDescription(
         key="radio_summary",
@@ -916,7 +1080,7 @@ class UniFiPortSpeedSensor(CoordinatorEntity[UniFiInfrastructureCoordinator], Se
         super().__init__(coordinator)
         self.port_key = port_key
         self._attr_unique_id = f"{port_key}_speed"
-        self._attr_name = self.port.name if self.port is not None else "Port"
+        self._attr_name = _port_sensor_name(self.port)
 
     @property
     def port(self) -> UniFiPort | None:

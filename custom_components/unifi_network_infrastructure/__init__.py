@@ -176,9 +176,11 @@ def _async_migrate_entity_ids(
             _async_migrate_lock_entity_id(registry, entity, coordinator)
             continue
         if entity.entity_id.startswith("switch."):
-            if _async_migrate_guest_network_switch_entity_id(registry, entity, coordinator):
+            if _async_remove_guest_network_switch_entity(registry, entity):
                 continue
             if _async_migrate_port_forward_switch_entity_id(registry, entity, coordinator):
+                continue
+            if _async_migrate_traffic_route_switch_entity_id(registry, entity, coordinator):
                 continue
             _async_migrate_wlan_switch_entity_id(registry, entity, coordinator)
             continue
@@ -297,29 +299,17 @@ def _async_migrate_wlan_switch_entity_id(
     registry.async_update_entity(entity.entity_id, **updates)
 
 
-def _async_migrate_guest_network_switch_entity_id(
+def _async_remove_guest_network_switch_entity(
     registry: er.EntityRegistry,
     entity: er.RegistryEntry,
-    coordinator: UniFiInfrastructureCoordinator,
 ) -> bool:
-    """Shorten guest network switch entity IDs."""
+    """Remove old wired guest-network switch entities."""
     unique_id = str(entity.unique_id or "")
     prefix = "guest_network_"
     suffix = "_enabled"
     if not unique_id.startswith(prefix) or not unique_id.endswith(suffix):
         return False
-    network_id = unique_id[len(prefix) : -len(suffix)]
-    network = coordinator.data.guest_networks.get(network_id)
-    router_key = coordinator.data.router_device_key
-    router = coordinator.data.devices.get(router_key) if router_key is not None else None
-    if network is None or router is None:
-        return True
-    desired_name = f"Guest Network {network.name}"
-    desired_entity_id = f"switch.{slugify(router.name)}_guest_network_{slugify(network.name)}"
-    updates: dict[str, object | None] = {"original_name": desired_name}
-    if entity.entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
-        updates["new_entity_id"] = desired_entity_id
-    registry.async_update_entity(entity.entity_id, **updates)
+    registry.async_remove(entity.entity_id)
     return True
 
 
@@ -342,6 +332,32 @@ def _async_migrate_port_forward_switch_entity_id(
         return True
     desired_name = f"Port Forward {rule.name}"
     desired_entity_id = f"switch.{slugify(router.name)}_port_forward_{slugify(rule.name)}"
+    updates: dict[str, object | None] = {"original_name": desired_name}
+    if entity.entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
+        updates["new_entity_id"] = desired_entity_id
+    registry.async_update_entity(entity.entity_id, **updates)
+    return True
+
+
+def _async_migrate_traffic_route_switch_entity_id(
+    registry: er.EntityRegistry,
+    entity: er.RegistryEntry,
+    coordinator: UniFiInfrastructureCoordinator,
+) -> bool:
+    """Shorten traffic route policy switch entity IDs."""
+    unique_id = str(entity.unique_id or "")
+    prefix = "traffic_route_"
+    suffix = "_enabled"
+    if not unique_id.startswith(prefix) or not unique_id.endswith(suffix):
+        return False
+    route_id = unique_id[len(prefix) : -len(suffix)]
+    route = coordinator.data.traffic_routes.get(route_id)
+    router_key = coordinator.data.router_device_key
+    router = coordinator.data.devices.get(router_key) if router_key is not None else None
+    if route is None or router is None:
+        return True
+    desired_name = f"Route Policy {route.name}"
+    desired_entity_id = f"switch.{slugify(router.name)}_route_policy_{slugify(route.name)}"
     updates: dict[str, object | None] = {"original_name": desired_name}
     if entity.entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
         updates["new_entity_id"] = desired_entity_id

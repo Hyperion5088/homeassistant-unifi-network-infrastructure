@@ -110,13 +110,13 @@ class UniFiInfrastructureClient:
             raise UniFiInfrastructureError("Unexpected UniFi WLAN response")
         return [wlan for wlan in raw_wlans if isinstance(wlan, dict)]
 
-    async def async_get_networks(self) -> list[dict[str, Any]]:
-        """Return UniFi network configuration rows."""
-        payload = await self._request_json("GET", f"/proxy/network/api/s/{self.site}/rest/networkconf")
-        raw_networks = payload.get("data", payload if isinstance(payload, list) else [])
-        if not isinstance(raw_networks, list):
-            raise UniFiInfrastructureError("Unexpected UniFi network response")
-        return [network for network in raw_networks if isinstance(network, dict)]
+    async def async_get_traffic_routes(self) -> list[dict[str, Any]]:
+        """Return UniFi policy-based traffic routes."""
+        payload = await self._request_json("GET", f"/proxy/network/v2/api/site/{self.site}/trafficroutes")
+        raw_routes = payload if isinstance(payload, list) else payload.get("data", [])
+        if not isinstance(raw_routes, list):
+            raise UniFiInfrastructureError("Unexpected UniFi traffic-route response")
+        return [route for route in raw_routes if isinstance(route, dict)]
 
     async def async_get_port_forwards(self) -> list[dict[str, Any]]:
         """Return UniFi port-forward rules."""
@@ -134,16 +134,16 @@ class UniFiInfrastructureClient:
             json_data={"enabled": enabled},
         )
 
-    async def async_set_network_enabled(self, network: dict[str, Any], enabled: bool) -> None:
-        """Enable or disable a network without altering other fields."""
-        network_id = network.get("_id") or network.get("id")
-        if network_id in (None, ""):
-            raise UniFiInfrastructureError("Cannot update network without an ID")
-        payload = dict(network)
+    async def async_set_traffic_route_enabled(self, route: dict[str, Any], enabled: bool) -> None:
+        """Enable or disable a policy-based traffic route without altering other fields."""
+        route_id = route.get("_id") or route.get("id")
+        if route_id in (None, ""):
+            raise UniFiInfrastructureError("Cannot update traffic route without an ID")
+        payload = dict(route)
         payload["enabled"] = enabled
         await self._request_json(
             "PUT",
-            f"/proxy/network/api/s/{self.site}/rest/networkconf/{network_id}",
+            f"/proxy/network/v2/api/site/{self.site}/trafficroutes/{route_id}",
             json_data=payload,
         )
 

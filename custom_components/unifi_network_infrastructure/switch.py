@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import UniFiInfrastructureCoordinator, UniFiNetwork, UniFiPortForward, UniFiWlan
+from .coordinator import UniFiInfrastructureCoordinator, UniFiPortForward, UniFiTrafficRoute, UniFiWlan
 
 
 async def async_setup_entry(
@@ -23,8 +23,8 @@ async def async_setup_entry(
     """Set up UniFi Network Infrastructure switch controls."""
     coordinator: UniFiInfrastructureCoordinator = hass.data[DOMAIN][entry.entry_id]
     known_wlans: set[str] = set()
-    known_guest_networks: set[str] = set()
     known_port_forwards: set[str] = set()
+    known_traffic_routes: set[str] = set()
 
     def add_wlan_entities() -> None:
         new_entities = [
@@ -35,17 +35,6 @@ async def async_setup_entry(
         if not new_entities:
             return
         known_wlans.update(entity.wlan_id for entity in new_entities)
-        async_add_entities(new_entities)
-
-    def add_guest_network_entities() -> None:
-        new_entities = [
-            UniFiGuestNetworkEnabledSwitch(coordinator, network_id)
-            for network_id in sorted(coordinator.data.guest_networks)
-            if network_id not in known_guest_networks
-        ]
-        if not new_entities:
-            return
-        known_guest_networks.update(entity.network_id for entity in new_entities)
         async_add_entities(new_entities)
 
     def add_port_forward_entities() -> None:
@@ -59,12 +48,23 @@ async def async_setup_entry(
         known_port_forwards.update(entity.rule_id for entity in new_entities)
         async_add_entities(new_entities)
 
+    def add_traffic_route_entities() -> None:
+        new_entities = [
+            UniFiTrafficRouteEnabledSwitch(coordinator, route_id)
+            for route_id in sorted(coordinator.data.traffic_routes)
+            if route_id not in known_traffic_routes
+        ]
+        if not new_entities:
+            return
+        known_traffic_routes.update(entity.route_id for entity in new_entities)
+        async_add_entities(new_entities)
+
     add_wlan_entities()
-    add_guest_network_entities()
     add_port_forward_entities()
+    add_traffic_route_entities()
     entry.async_on_unload(coordinator.async_add_listener(add_wlan_entities))
-    entry.async_on_unload(coordinator.async_add_listener(add_guest_network_entities))
     entry.async_on_unload(coordinator.async_add_listener(add_port_forward_entities))
+    entry.async_on_unload(coordinator.async_add_listener(add_traffic_route_entities))
 
 
 class UniFiWlanEnabledSwitch(CoordinatorEntity[UniFiInfrastructureCoordinator], SwitchEntity):
@@ -209,45 +209,51 @@ class UniFiPortForwardEnabledSwitch(CoordinatorEntity[UniFiInfrastructureCoordin
         await self.coordinator.async_set_port_forward_enabled(self.rule_id, False)
 
 
-class UniFiGuestNetworkEnabledSwitch(CoordinatorEntity[UniFiInfrastructureCoordinator], SwitchEntity):
-    """Guest network enabled switch."""
+class UniFiTrafficRouteEnabledSwitch(CoordinatorEntity[UniFiInfrastructureCoordinator], SwitchEntity):
+    """Traffic route policy enabled switch."""
 
     _attr_has_entity_name = True
-    _attr_icon = "mdi:account-group"
+    _attr_icon = "mdi:routes"
 
-    def __init__(self, coordinator: UniFiInfrastructureCoordinator, network_id: str) -> None:
+    def __init__(self, coordinator: UniFiInfrastructureCoordinator, route_id: str) -> None:
         """Initialize the switch."""
         super().__init__(coordinator)
-        self.network_id = network_id
-        self._attr_unique_id = f"guest_network_{network_id}_enabled"
-        self._attr_name = f"Guest Network {self.network.name}" if self.network is not None else "Guest Network"
+        self.route_id = route_id
+        self._attr_unique_id = f"traffic_route_{route_id}_enabled"
+        self._attr_name = f"Route Policy {self.route.name}" if self.route is not None else "Route Policy"
 
     @property
-    def network(self) -> UniFiNetwork | None:
-        """Return the backing network."""
-        return self.coordinator.data.guest_networks.get(self.network_id)
+    def route(self) -> UniFiTrafficRoute | None:
+        """Return the backing traffic route."""
+        return self.coordinator.data.traffic_routes.get(self.route_id)
 
     @property
     def is_on(self) -> bool | None:
-        """Return whether the guest network is enabled."""
-        return self.network.enabled if self.network is not None else None
+        """Return whether the traffic route is enabled."""
+        return self.route.enabled if self.route is not None else None
 
     @property
     def available(self) -> bool:
-        """Return whether the guest network row is currently available."""
-        return super().available and self.network is not None and self.network.enabled is not None
+        """Return whether the traffic route row is currently available."""
+        return super().available and self.route is not None and self.route.enabled is not None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return guest network context."""
-        if self.network is None:
+        """Return traffic route context."""
+        if self.route is None:
             return {}
         attrs = {
-            "network_id": self.network.key,
-            "name": self.network.name,
-            "purpose": self.network.purpose,
-            "network_group": self.network.network_group,
-            "vlan": self.network.vlan,
+            "route_id": self.route.key,
+            "name": self.route.name,
+            "matching_target": self.route.matching_target,
+            "network_id": self.route.network_id,
+            "next_hop": self.route.next_hop,
+            "kill_switch_enabled": self.route.kill_switch_enabled,
+            "domain_count": self.route.domain_count,
+            "ip_address_count": self.route.ip_address_count,
+            "ip_range_count": self.route.ip_range_count,
+            "region_count": self.route.region_count,
+            "target_device_count": self.route.target_device_count,
         }
         return {key: value for key, value in attrs.items() if value not in (None, "")}
 
@@ -268,12 +274,12 @@ class UniFiGuestNetworkEnabledSwitch(CoordinatorEntity[UniFiInfrastructureCoordi
         )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Enable the guest network."""
-        await self.coordinator.async_set_guest_network_enabled(self.network_id, True)
+        """Enable the traffic route."""
+        await self.coordinator.async_set_traffic_route_enabled(self.route_id, True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Disable the guest network."""
-        await self.coordinator.async_set_guest_network_enabled(self.network_id, False)
+        """Disable the traffic route."""
+        await self.coordinator.async_set_traffic_route_enabled(self.route_id, False)
 
 
 def _wlan_switch_name(wlan: UniFiWlan | None) -> str:

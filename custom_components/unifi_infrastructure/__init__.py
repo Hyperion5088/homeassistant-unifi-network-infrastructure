@@ -25,6 +25,7 @@ from .const import (
 from .coordinator import UniFiInfrastructureCoordinator
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH, Platform.LOCK]
+DEFAULT_DISABLED_MIGRATION_OPTION = "_default_disabled_entities_migrated"
 
 DIAGNOSTIC_SENSOR_SUFFIXES = frozenset(
     {
@@ -38,6 +39,18 @@ DIAGNOSTIC_SENSOR_SUFFIXES = frozenset(
         "rx_bytes",
         "tx_bytes",
         "total_bytes",
+    }
+)
+DEFAULT_DISABLED_SENSOR_SUFFIXES = frozenset(
+    {
+        "state",
+        "last_seen",
+        "load_average_1_min",
+        "load_average_5_min",
+        "load_average_15_min",
+        "radio_count",
+        "vap_count",
+        "radio_summary",
     }
 )
 
@@ -67,7 +80,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
     hass.data[DOMAIN][entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    _async_migrate_entity_ids(hass, entry, coordinator)
+    should_disable_existing_defaults = not entry.options.get(DEFAULT_DISABLED_MIGRATION_OPTION, False)
+    _async_migrate_entity_ids(
+        hass,
+        entry,
+        coordinator,
+        disable_existing_default_entities=should_disable_existing_defaults,
+    )
+    if should_disable_existing_defaults:
+        hass.config_entries.async_update_entry(
+            entry,
+            options={**entry.options, DEFAULT_DISABLED_MIGRATION_OPTION: True},
+        )
     entry.async_on_unload(
         async_call_later(hass, 10, lambda _: _async_migrate_entity_ids(hass, entry, coordinator))
     )
@@ -95,6 +119,8 @@ def _async_migrate_entity_ids(
     hass: HomeAssistant,
     entry: ConfigEntry,
     coordinator: UniFiInfrastructureCoordinator,
+    *,
+    disable_existing_default_entities: bool = False,
 ) -> None:
     """Give early development entities stable descriptive names."""
     registry = er.async_get(hass)
@@ -148,6 +174,12 @@ def _async_migrate_entity_ids(
             "original_name": names_by_suffix[suffix],
             "entity_category": EntityCategory.DIAGNOSTIC if suffix in DIAGNOSTIC_SENSOR_SUFFIXES else None,
         }
+        if (
+            disable_existing_default_entities
+            and suffix in DEFAULT_DISABLED_SENSOR_SUFFIXES
+            and entity.disabled_by is None
+        ):
+            updates["disabled_by"] = er.RegistryEntryDisabler.INTEGRATION
         if entity.entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
             updates["new_entity_id"] = desired_entity_id
         registry.async_update_entity(entity.entity_id, **updates)

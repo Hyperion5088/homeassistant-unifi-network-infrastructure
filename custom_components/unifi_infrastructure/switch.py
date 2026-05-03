@@ -43,6 +43,7 @@ class UniFiWlanEnabledSwitch(CoordinatorEntity[UniFiInfrastructureCoordinator], 
     """SSID/WLAN enabled switch."""
 
     _attr_has_entity_name = True
+    _attr_icon = "mdi:wifi"
 
     def __init__(self, coordinator: UniFiInfrastructureCoordinator, wlan_id: str) -> None:
         """Initialize the switch."""

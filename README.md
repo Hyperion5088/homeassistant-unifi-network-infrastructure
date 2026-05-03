@@ -27,6 +27,7 @@ Sensor notes:
 - `Received Traffic`, `Transmitted Traffic`, and `Total Traffic` are cumulative byte counters from the controller payload, not live Mbps bandwidth rates.
 - `Radio Count` is the number of physical AP radios.
 - `VAP Count` is the number of virtual AP/BSSID instances, so it can be higher than the number of SSIDs.
+- `State`, `Last Seen`, `System Load`, `Radio Count`, `VAP Count`, and `Radio Details` are disabled by default to keep new installs quieter.
 
 Entity category rules:
 
@@ -86,6 +87,8 @@ SSID controls poll the UniFi WLAN configuration endpoint and create switch entit
 - `PUT /proxy/network/api/s/<site>/rest/wlanconf/<wlan_id>`
 
 If a new WLAN/SSID is added later, the integration creates the matching switch on a future poll without reinstalling the integration.
+
+Per-AP SSID control is intentionally out of scope for now.
 
 ## Design Boundary
 

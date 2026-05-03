@@ -17,6 +17,7 @@ Current scope:
 - access point radio and VAP count sensors where the controller exposes radio inventory
 - fan sensors only when the controller exposes concrete fan level or fan table data
 - SSID enable/disable controls exposed as switch entities on the UniFi router/controller device
+- uplink port configuration protection locks for UniFi switches
 - no `device_tracker` platform
 - no ordinary network-client devices
 - diagnostics with credentials redacted
@@ -33,7 +34,7 @@ Entity category rules:
 
 - Normal sensors: operational values useful for dashboards and device cards, such as state, identity, firmware, temperature, clients, uplink, and port/radio inventory.
 - Diagnostic sensors: internal health or troubleshooting values, such as CPU, memory, uptime, last seen, system load, and cumulative traffic counters.
-- Configuration entities: future user-editable settings.
+- Configuration entities: user-editable settings and protection locks.
 - Control entities: actions and toggles, such as SSID enable/disable switches.
 
 Not included yet:
@@ -89,6 +90,10 @@ SSID controls poll the UniFi WLAN configuration endpoint and create switch entit
 If a new WLAN/SSID is added later, the integration creates the matching switch on a future poll without reinstalling the integration.
 
 Per-AP SSID control is intentionally out of scope for now.
+
+Switch uplink protection uses the UniFi controller's local `port_table[].is_uplink` flag. That means an uplink can still be protected when the upstream device is not UniFi hardware, because the rule is based on the local UniFi switch port role rather than LLDP identity.
+
+Uplink protection locks are locked by default. Unlocking one temporarily allows maintenance and it automatically locks again after 15 minutes.
 
 ## Design Boundary
 

@@ -24,7 +24,7 @@ from .const import (
 )
 from .coordinator import UniFiInfrastructureCoordinator
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH, Platform.LOCK]
 
 DIAGNOSTIC_SENSOR_SUFFIXES = frozenset(
     {
@@ -81,6 +81,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id, None)
         if coordinator is not None:
+            coordinator.cancel_auto_protect_timers()
             await coordinator.client.async_logout()
     return unload_ok
 

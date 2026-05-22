@@ -13,7 +13,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfDataRate, UnitOfTemperature, UnitOfTime
+from homeassistant.const import PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -953,8 +953,7 @@ WAN_SENSOR_DESCRIPTIONS: tuple[UniFiWanSensorDescription, ...] = (
         key="speedtest_download",
         name="Speed Test Download",
         icon="mdi:download-network",
-        device_class=SensorDeviceClass.DATA_RATE,
-        native_unit_of_measurement=UnitOfDataRate.MEGABITS_PER_SECOND,
+        native_unit_of_measurement="Mbit/s",
         value_fn=lambda wan: wan.download_mbps,
         attr_fn=_wan_attrs,
     ),
@@ -962,8 +961,7 @@ WAN_SENSOR_DESCRIPTIONS: tuple[UniFiWanSensorDescription, ...] = (
         key="speedtest_upload",
         name="Speed Test Upload",
         icon="mdi:upload-network",
-        device_class=SensorDeviceClass.DATA_RATE,
-        native_unit_of_measurement=UnitOfDataRate.MEGABITS_PER_SECOND,
+        native_unit_of_measurement="Mbit/s",
         value_fn=lambda wan: wan.upload_mbps,
         attr_fn=_wan_attrs,
     ),
@@ -971,8 +969,7 @@ WAN_SENSOR_DESCRIPTIONS: tuple[UniFiWanSensorDescription, ...] = (
         key="speedtest_latency",
         name="Speed Test Latency",
         icon="mdi:timer-outline",
-        device_class=SensorDeviceClass.DURATION,
-        native_unit_of_measurement=UnitOfTime.MILLISECONDS,
+        native_unit_of_measurement="ms",
         value_fn=lambda wan: wan.latency_ms,
         attr_fn=_wan_attrs,
     ),

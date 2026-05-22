@@ -618,20 +618,24 @@ def _async_migrate_device_names(
     for entry in list(registry.devices.values()):
         if not entry.identifiers:
             continue
-        device_key = next(
-            (
-                identifier
-                for domain, identifier in entry.identifiers
-                if domain == DOMAIN
-            ),
-            None,
-        )
+        device_key = _device_registry_key(entry)
         if device_key is None:
             continue
         device = coordinator.data.devices.get(device_key)
         if device is None or entry.name == device.name:
             continue
         registry.async_update_device(entry.id, name=device.name)
+
+
+def _device_registry_key(entry: dr.DeviceEntry) -> str | None:
+    """Return this integration's device key from a registry entry."""
+    for identifier in entry.identifiers:
+        if len(identifier) != 2:
+            continue
+        domain, device_key = identifier
+        if domain == DOMAIN:
+            return device_key
+    return None
 
 
 def _async_migrate_lock_entity_id(

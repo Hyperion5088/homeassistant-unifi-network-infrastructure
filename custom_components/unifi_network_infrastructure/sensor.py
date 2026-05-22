@@ -13,7 +13,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfTemperature
+from homeassistant.const import PERCENTAGE, UnitOfDataRate, UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -30,6 +30,14 @@ class UniFiSensorDescription(SensorEntityDescription):
     value_fn: Callable[[UniFiDevice], Any]
     attr_fn: Callable[[UniFiDevice], dict[str, Any]] | None = None
     device_kinds: frozenset[str] | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class UniFiWanSensorDescription(SensorEntityDescription):
+    """UniFi WAN sensor description."""
+
+    value_fn: Callable[[UniFiWan], Any]
+    attr_fn: Callable[[UniFiWan], dict[str, Any]] | None = None
 
 
 SWITCH_KINDS = frozenset({"usw"})
@@ -906,6 +914,79 @@ SENSOR_DESCRIPTIONS: tuple[UniFiSensorDescription, ...] = (
 )
 
 
+def _wan_attrs(wan: UniFiWan) -> dict[str, Any]:
+    """Return WAN context."""
+    attrs = {
+        "wan": wan.name,
+        "ip_address": wan.ip,
+        "isp": wan.isp,
+        "interface": wan.ifname,
+        "port_idx": wan.port_idx,
+        "status": wan.status,
+        "alive": wan.alive,
+        "speedtest_download_mbps": wan.download_mbps,
+        "speedtest_upload_mbps": wan.upload_mbps,
+        "speedtest_latency_ms": wan.latency_ms,
+        "speedtest_last_run": (
+            wan.speedtest_last_run.isoformat() if wan.speedtest_last_run else None
+        ),
+    }
+    return {key: value for key, value in attrs.items() if value not in (None, "")}
+
+
+WAN_SENSOR_DESCRIPTIONS: tuple[UniFiWanSensorDescription, ...] = (
+    UniFiWanSensorDescription(
+        key="ip_address",
+        name="IP",
+        icon="mdi:wan",
+        value_fn=lambda wan: wan.ip,
+        attr_fn=_wan_attrs,
+    ),
+    UniFiWanSensorDescription(
+        key="isp",
+        name="ISP",
+        icon="mdi:domain",
+        value_fn=lambda wan: wan.isp,
+        attr_fn=_wan_attrs,
+    ),
+    UniFiWanSensorDescription(
+        key="speedtest_download",
+        name="Speed Test Download",
+        icon="mdi:download-network",
+        device_class=SensorDeviceClass.DATA_RATE,
+        native_unit_of_measurement=UnitOfDataRate.MEGABITS_PER_SECOND,
+        value_fn=lambda wan: wan.download_mbps,
+        attr_fn=_wan_attrs,
+    ),
+    UniFiWanSensorDescription(
+        key="speedtest_upload",
+        name="Speed Test Upload",
+        icon="mdi:upload-network",
+        device_class=SensorDeviceClass.DATA_RATE,
+        native_unit_of_measurement=UnitOfDataRate.MEGABITS_PER_SECOND,
+        value_fn=lambda wan: wan.upload_mbps,
+        attr_fn=_wan_attrs,
+    ),
+    UniFiWanSensorDescription(
+        key="speedtest_latency",
+        name="Speed Test Latency",
+        icon="mdi:timer-outline",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.MILLISECONDS,
+        value_fn=lambda wan: wan.latency_ms,
+        attr_fn=_wan_attrs,
+    ),
+    UniFiWanSensorDescription(
+        key="speedtest_last_run",
+        name="Speed Test Last Run",
+        icon="mdi:clock-outline",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=lambda wan: wan.speedtest_last_run,
+        attr_fn=_wan_attrs,
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -926,13 +1007,15 @@ async def async_setup_entry(
 
     def add_wan_entities() -> None:
         new_entities = [
-            UniFiWanIpSensor(coordinator, wan_key)
-            for wan_key in sorted(coordinator.data.wans)
-            if wan_key not in known_wans
+            UniFiWanSensor(coordinator, wan_key, description)
+            for wan_key, wan in sorted(coordinator.data.wans.items())
+            for description in WAN_SENSOR_DESCRIPTIONS
+            if f"{wan_key}_{description.key}" not in known_wans
+            and description.value_fn(wan) is not None
         ]
         if not new_entities:
             return
-        known_wans.update(entity.wan_key for entity in new_entities)
+        known_wans.update(entity._attr_unique_id for entity in new_entities)
         async_add_entities(new_entities)
 
     def add_port_entities() -> None:
@@ -1008,18 +1091,25 @@ class UniFiInfrastructureSensor(CoordinatorEntity[UniFiInfrastructureCoordinator
         )
 
 
-class UniFiWanIpSensor(CoordinatorEntity[UniFiInfrastructureCoordinator], SensorEntity):
-    """UniFi router WAN IP address sensor."""
+class UniFiWanSensor(CoordinatorEntity[UniFiInfrastructureCoordinator], SensorEntity):
+    """UniFi router WAN sensor."""
 
     _attr_has_entity_name = True
-    _attr_icon = "mdi:wan"
 
-    def __init__(self, coordinator: UniFiInfrastructureCoordinator, wan_key: str) -> None:
+    def __init__(
+        self,
+        coordinator: UniFiInfrastructureCoordinator,
+        wan_key: str,
+        description: UniFiWanSensorDescription,
+    ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self.wan_key = wan_key
-        self._attr_unique_id = f"{wan_key}_ip_address"
-        self._attr_name = f"IP {self.wan.name}" if self.wan is not None else "IP WAN"
+        self.entity_description = description
+        self._attr_unique_id = f"{wan_key}_{description.key}"
+        self._attr_name = (
+            f"{description.name} {self.wan.name}" if self.wan is not None else description.name
+        )
 
     @property
     def wan(self) -> UniFiWan | None:
@@ -1027,9 +1117,11 @@ class UniFiWanIpSensor(CoordinatorEntity[UniFiInfrastructureCoordinator], Sensor
         return self.coordinator.data.wans.get(self.wan_key)
 
     @property
-    def native_value(self) -> str | None:
-        """Return the WAN IP address."""
-        return self.wan.ip if self.wan is not None else None
+    def native_value(self) -> Any:
+        """Return the WAN sensor value."""
+        if self.wan is None:
+            return None
+        return self.entity_description.value_fn(self.wan)
 
     @property
     def available(self) -> bool:
@@ -1037,18 +1129,11 @@ class UniFiWanIpSensor(CoordinatorEntity[UniFiInfrastructureCoordinator], Sensor
         return super().available and self.wan is not None
 
     @property
-    def extra_state_attributes(self) -> dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return WAN context."""
-        if self.wan is None:
-            return {}
-        attrs = {
-            "wan": self.wan.name,
-            "interface": self.wan.ifname,
-            "port_idx": self.wan.port_idx,
-            "status": self.wan.status,
-            "alive": self.wan.alive,
-        }
-        return {key: value for key, value in attrs.items() if value not in (None, "")}
+        if self.wan is None or self.entity_description.attr_fn is None:
+            return None
+        return self.entity_description.attr_fn(self.wan)
 
     @property
     def device_info(self) -> DeviceInfo | None:

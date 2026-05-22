@@ -23,7 +23,7 @@ Current scope:
 - switch and gateway port configuration protection locks, including router WAN uplinks when the controller exposes the WAN port mapping
 - optional switch/gateway port admin, PoE, bounce, and PoE reset controls
 - optional device locate and guarded reboot controls
-- internal/controller-facing gateway IP sensors plus separate WAN IP sensors for each detected internet uplink
+- internal/controller-facing gateway IP sensors plus separate WAN IP, ISP, and last speed-test sensors for each detected internet uplink where UniFi exposes them
 - no `device_tracker` platform
 - no ordinary network-client devices
 - diagnostics with credentials redacted
@@ -32,6 +32,7 @@ Sensor notes:
 
 - `System Load` is a Linux-style unitless load average, not CPU percentage. Interpret it relative to the device CPU capacity.
 - `Traffic Received`, `Traffic Transmitted`, and `Traffic Total` are cumulative counters from the controller payload, not live Mbps bandwidth rates. Their state is shown as a readable B/KB/MB/GB/TB value, with the raw byte counter retained in attributes.
+- WAN speed-test sensors report the last UniFi ISP speed-test result for the matching WAN connection. They are not live bandwidth sensors and only appear when the controller exposes stored results for that connection.
 - When a device reports multiple temperature probes, the `Temperature` sensor uses the highest reported probe as its state and includes the individual probe values as attributes.
 - `Radio Count` is the number of physical AP radios.
 - `VAP Count` is the number of virtual AP/BSSID instances, so it can be higher than the number of SSIDs.
@@ -43,7 +44,7 @@ Entity naming rules:
 - Wi-Fi controls use `WiFi <SSID>`.
 - Port-forward controls use `Port Forward <rule name>`.
 - Conditional route policies use `Route Policy <policy name>`.
-- LAN/WAN addresses use `IP LAN`, `IP WAN 1`, `IP WAN 2`, and so on.
+- LAN/WAN addresses use `IP LAN`, `IP WAN 1`, `IP WAN 2`, and so on. ISP and speed-test entities follow the same WAN numbering.
 - System/diagnostic sensors use `System <sensor>`, for example `System CPU Usage`, `System Firmware`, and `System MAC Address`.
 - Port protection locks use `Protection <port>`.
 - Port status sensors use `Port <label>` for copper ports and `Port <connector> <label>` for fibre ports, for example `Port SFP 1`, `Port SFP+ 1`, or `Port QSFP 1`.
@@ -112,6 +113,8 @@ The integration uses the local UniFi OS login endpoint and then polls:
 
 - `POST /api/auth/login`
 - `GET /proxy/network/api/s/<site>/stat/device`
+- `GET /proxy/network/api/s/<site>/stat/health`
+- `GET /proxy/network/v2/api/site/<site>/aggregated-dashboard?historySeconds=86400`
 
 It deliberately avoids client/device-tracker endpoints.
 
@@ -153,7 +156,7 @@ Locate and reboot controls are optional and disabled by default. Reboot controls
 
 Port protection uses the UniFi controller's local `port_table[].is_uplink` flag, child-device uplink metadata, router WAN port mappings, and per-port LLDP rows where the controller exposes `lldp_table[].local_port_idx`. That means an uplink can still be protected when the upstream or downstream device is not UniFi hardware, and switch/router ports that feed downstream UniFi switches or access points can also be protected.
 
-For UniFi gateways, the normal `IP Address` sensor uses the internal/controller-facing address where the controller exposes one, such as `lan_ip`. Public internet addresses are exposed separately as `WAN 1 IP Address`, `WAN 2 IP Address`, and so on, depending on how many active WAN rows the controller reports.
+For UniFi gateways, the normal `IP LAN` sensor uses the internal/controller-facing address where the controller exposes one, such as `lan_ip`. Public internet addresses are exposed separately as `IP WAN 1`, `IP WAN 2`, and so on, depending on how many active WAN rows the controller reports. ISP and last speed-test result sensors are also created per WAN connection when UniFi exposes those values.
 
 Port protection creates a lock for every switch/router port and uses short names such as `Protection Port 3` on the switch/router device. Infrastructure uplink/downlink ports and detected router WAN ports are locked by default; ordinary edge ports are unlocked by default and can be manually locked. Manual locks are stored locally by Home Assistant so they survive reloads and restarts. Unlocking an infrastructure port temporarily allows maintenance and it automatically locks again after 15 minutes.
 

@@ -156,6 +156,24 @@ class UniFiInfrastructureClient:
             raise UniFiInfrastructureError("Unexpected UniFi traffic-route response")
         return [route for route in raw_routes if isinstance(route, dict)]
 
+    async def async_get_health(self) -> list[dict[str, Any]]:
+        """Return UniFi site health rows."""
+        payload = await self._request_json("GET", f"/proxy/network/api/s/{self.site}/stat/health")
+        raw_health = payload.get("data", payload if isinstance(payload, list) else [])
+        if not isinstance(raw_health, list):
+            raise UniFiInfrastructureError("Unexpected UniFi health response")
+        return [row for row in raw_health if isinstance(row, dict)]
+
+    async def async_get_aggregated_dashboard(self) -> dict[str, Any]:
+        """Return UniFi aggregated dashboard metrics."""
+        payload = await self._request_json(
+            "GET",
+            f"/proxy/network/v2/api/site/{self.site}/aggregated-dashboard?historySeconds=86400",
+        )
+        if not isinstance(payload, dict):
+            raise UniFiInfrastructureError("Unexpected UniFi dashboard response")
+        return payload
+
     async def async_get_port_forwards(self) -> list[dict[str, Any]]:
         """Return UniFi port-forward rules."""
         payload = await self._request_json("GET", f"/proxy/network/api/s/{self.site}/rest/portforward")

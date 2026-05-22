@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 import logging
 import re
 import time
@@ -88,6 +88,11 @@ class UniFiWan:
     port_idx: int | None
     status: str | None
     alive: bool | None
+    isp: str | None
+    download_mbps: int | float | None
+    upload_mbps: int | float | None
+    latency_ms: int | float | None
+    speedtest_last_run: datetime | None
     raw: dict[str, Any]
 
 
@@ -232,6 +237,16 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
         except UniFiInfrastructureError as err:
             LOGGER.debug("UniFi firewall policies are not available from this controller: %s", err)
             firewall_policies = []
+        try:
+            health = await self.client.async_get_health()
+        except UniFiInfrastructureError as err:
+            LOGGER.debug("UniFi health metrics are not available from this controller: %s", err)
+            health = []
+        try:
+            dashboard = await self.client.async_get_aggregated_dashboard()
+        except UniFiInfrastructureError as err:
+            LOGGER.debug("UniFi dashboard metrics are not available from this controller: %s", err)
+            dashboard = {}
         normalized = [_normalize_device(device) for device in devices]
         normalized_wlans: list[UniFiWlan] = []
         for wlan in wlans:
@@ -254,7 +269,7 @@ class UniFiInfrastructureCoordinator(DataUpdateCoordinator[UniFiInfrastructureDa
         return UniFiInfrastructureData(
             devices=device_map,
             ports=ports,
-            wans=_normalize_wans(normalized),
+            wans=_normalize_wans(normalized, health, dashboard),
             wlans={wlan.key: wlan for wlan in normalized_wlans},
             port_forwards={rule.key: rule for rule in normalized_port_forwards},
             traffic_routes={route.key: route for route in normalized_traffic_routes},
@@ -600,36 +615,168 @@ def _normalize_ports(devices: list[UniFiDevice]) -> dict[str, UniFiPort]:
     return ports
 
 
-def _normalize_wans(devices: list[UniFiDevice]) -> dict[str, UniFiWan]:
+def _normalize_wans(
+    devices: list[UniFiDevice],
+    health: list[dict[str, Any]],
+    dashboard: dict[str, Any],
+) -> dict[str, UniFiWan]:
     """Normalize WAN/internet uplinks for UniFi gateways."""
     wans: dict[str, UniFiWan] = {}
+    health_by_name = _wan_health_by_name(health)
+    speedtest_by_name = _speedtest_by_wan_name(dashboard)
     for device in devices:
         if device.kind not in {"udm", "ugw"}:
             continue
         status_by_name = _wan_status_by_name(device.raw)
-        alive_by_name = _wan_alive_by_name(device.raw)
+        interface_by_name = _wan_interface_by_name(device.raw)
         for source_key, row in sorted(device.raw.items()):
-            if not source_key.startswith("wan") or not source_key[3:].isdigit() or not isinstance(row, dict):
-                continue
-            ip = _first_string(row, "ip")
-            if ip is None:
+            if (
+                not source_key.startswith("wan")
+                or not source_key[3:].isdigit()
+                or not isinstance(row, dict)
+            ):
                 continue
             wan_number = int(source_key[3:])
-            name = f"WAN {wan_number}"
+            name = _wan_name(row, wan_number)
             status_key = "WAN" if wan_number == 1 else f"WAN{wan_number}"
+            interface_row = interface_by_name.get(status_key, {})
+            health_row = health_by_name.get(status_key, {})
+            speedtest_row = speedtest_by_name.get(status_key, {})
+            ip = _first_string(row, "ip", "wan_ip", "external_ip") or _first_string(
+                interface_row, "ip", "wan_ip", "external_ip"
+            )
+            if ip is None:
+                continue
             key = f"{device.key}_wan_{wan_number}"
+            raw = {
+                "wan": row,
+                "health": health_row,
+                "interface": interface_row,
+                "speedtest": speedtest_row,
+            }
             wans[key] = UniFiWan(
                 key=key,
                 device_key=device.key,
                 name=name,
                 ip=ip,
-                ifname=_first_string(row, "ifname", "name", "uplink_ifname"),
+                ifname=_first_string(row, "ifname", "name", "uplink_ifname")
+                or _first_string(interface_row, "ifname", "interface_name", "name"),
                 port_idx=_int_value(row.get("port_idx")),
-                status=status_by_name.get(status_key),
-                alive=alive_by_name.get(status_key),
-                raw=row,
+                status=status_by_name.get(status_key)
+                or _first_string(health_row, "status", "state"),
+                alive=_wan_alive(interface_row, health_row),
+                isp=_wan_isp(row, interface_row, health_row, speedtest_row),
+                download_mbps=_number_value(
+                    speedtest_row.get("download_mbps")
+                    or speedtest_row.get("xput_download")
+                    or speedtest_row.get("xput_down")
+                    or health_row.get("xput_down")
+                    or health_row.get("xput_download")
+                ),
+                upload_mbps=_number_value(
+                    speedtest_row.get("upload_mbps")
+                    or speedtest_row.get("xput_upload")
+                    or speedtest_row.get("xput_up")
+                    or health_row.get("xput_up")
+                    or health_row.get("xput_upload")
+                ),
+                latency_ms=_number_value(
+                    speedtest_row.get("latency_ms")
+                    or speedtest_row.get("latency")
+                    or health_row.get("latency")
+                    or health_row.get("latency_ms")
+                ),
+                speedtest_last_run=_datetime_value(
+                    speedtest_row.get("time")
+                    or speedtest_row.get("timestamp")
+                    or speedtest_row.get("datetime")
+                    or health_row.get("speedtest_lastrun")
+                ),
+                raw=raw,
             )
     return wans
+
+
+def _wan_name(wan: dict[str, Any], wan_number: int) -> str:
+    """Return a stable WAN label."""
+    return (
+        _first_string(wan, "wan_networkgroup", "networkgroup", "display_name")
+        or f"WAN {wan_number}"
+    )
+
+
+def _wan_health_by_name(health: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Return WAN health rows keyed by WAN group name."""
+    rows: dict[str, dict[str, Any]] = {}
+    for row in health:
+        if str(row.get("subsystem") or "").lower() != "wan":
+            continue
+        name = _wan_group_key(
+            row.get("wan_networkgroup") or row.get("name") or row.get("interface")
+        )
+        if name is not None:
+            rows[name] = row
+    return rows
+
+
+def _speedtest_by_wan_name(dashboard: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Return last speed-test rows keyed by WAN group name."""
+    speedtest = dashboard.get("speed_test")
+    if not isinstance(speedtest, dict):
+        speedtest = dashboard.get("speedtest")
+    data = speedtest.get("data") if isinstance(speedtest, dict) else None
+    if not isinstance(data, list):
+        return {}
+    rows: dict[str, dict[str, Any]] = {}
+    for index, row in enumerate(data, start=1):
+        if not isinstance(row, dict):
+            continue
+        name = _wan_group_key(row.get("wan_networkgroup") or row.get("name")) or (
+            "WAN" if index == 1 else f"WAN{index}"
+        )
+        rows[name] = row
+    return rows
+
+
+def _wan_group_key(value: Any) -> str | None:
+    """Normalize a UniFi WAN group name to WAN/WAN2 form."""
+    if value in (None, ""):
+        return None
+    label = str(value).strip().upper().replace(" ", "")
+    if label == "WAN1":
+        return "WAN"
+    if label.startswith("WAN") and label[3:].isdigit():
+        return label
+    return None
+
+
+def _wan_interface_by_name(device: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Return last WAN interface rows keyed by WAN group name."""
+    interfaces = device.get("last_wan_interfaces")
+    if not isinstance(interfaces, dict):
+        return {}
+    return {
+        str(key): value
+        for key, value in interfaces.items()
+        if isinstance(value, dict)
+    }
+
+
+def _wan_alive(*rows: dict[str, Any]) -> bool | None:
+    """Return the first explicit WAN alive value."""
+    for row in rows:
+        for key in ("alive", "up", "online", "connected"):
+            if (value := _bool_value(row.get(key))) is not None:
+                return value
+    return None
+
+
+def _wan_isp(*rows: dict[str, Any]) -> str | None:
+    """Return the first ISP name exposed by UniFi."""
+    for row in rows:
+        if (value := _first_string(row, "isp_name", "isp", "provider", "operator")) is not None:
+            return value
+    return None
 
 
 def _port_protection_reasons(devices: list[UniFiDevice]) -> dict[str, list[str]]:
@@ -1010,6 +1157,39 @@ def _int_value(value: Any) -> int | None:
             return int(float(value))
         except ValueError:
             return None
+    return None
+
+
+def _number_value(value: Any) -> int | float | None:
+    """Return a number from simple numeric values."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return value
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _datetime_value(value: Any) -> datetime | None:
+    """Return a UTC datetime from common UniFi timestamp shapes."""
+    number = _number_value(value)
+    if number is not None:
+        if number <= 0:
+            return None
+        seconds = number / 1000 if number > 10_000_000_000 else number
+        return datetime.fromtimestamp(seconds, UTC)
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
     return None
 
 

@@ -10,6 +10,8 @@ The integration only imports UniFi Network infrastructure hardware. It does not 
 | --- | --- |
 | `POST /api/auth/login` | Local UniFi OS authentication. |
 | `GET /proxy/network/api/s/<site>/stat/device` | Adopted infrastructure device inventory, gateway/switch/AP status, ports, WAN details, AP radios, AP VAPs, LLDP, traffic counters, and hardware telemetry. |
+| `GET /proxy/network/api/s/<site>/stat/health` | Optional WAN health details, including ISP/status/latency where exposed. |
+| `GET /proxy/network/v2/api/site/<site>/aggregated-dashboard?historySeconds=86400` | Optional last ISP speed-test results per WAN connection where exposed. |
 | `GET /proxy/network/api/s/<site>/rest/wlanconf` | WLAN/SSID configuration rows. |
 | `PUT /proxy/network/api/s/<site>/rest/wlanconf/<wlan_id>` | Optional WLAN/SSID enable-disable writes. |
 | `GET /proxy/network/api/s/<site>/rest/portforward` | Port-forward rules. |
@@ -65,11 +67,16 @@ These sensors are attached to the matching UniFi infrastructure device unless no
 
 ## WAN Sensors
 
-WAN sensors are attached to the gateway/router device and are created dynamically for each internet uplink that exposes an IP address.
+WAN sensors are attached to the gateway/router device and are created dynamically for each internet uplink that exposes an IP address. ISP and speed-test sensors are created per WAN connection when UniFi exposes matching values.
 
 | Entity | Category | Default | State | Attributes | Source |
 | --- | --- | --- | --- | --- | --- |
-| `IP WAN <n>` | Normal | Enabled | WAN public IP address. | `wan`, `interface`, `port_idx`, `status`, `alive`. | `wan<n>`, `last_wan_status`, `last_wan_interfaces`. |
+| `IP WAN <n>` | Normal | Enabled | WAN public/external IP address. | `wan`, `ip_address`, `isp`, `interface`, `port_idx`, `status`, `alive`, `speedtest_download_mbps`, `speedtest_upload_mbps`, `speedtest_latency_ms`, `speedtest_last_run`. | `wan<n>`, `last_wan_status`, `last_wan_interfaces`, `stat/health`, `aggregated-dashboard`. |
+| `ISP WAN <n>` | Normal | Enabled when present | ISP/provider name. | Same WAN context attributes as `IP WAN <n>`. | `wan<n>`, `last_wan_interfaces`, `stat/health`. |
+| `Speed Test Download WAN <n>` | Normal | Enabled when present | Last UniFi ISP speed-test download result in Mbps. | Same WAN context attributes as `IP WAN <n>`. | `aggregated-dashboard`, with health fallback fields where exposed. |
+| `Speed Test Upload WAN <n>` | Normal | Enabled when present | Last UniFi ISP speed-test upload result in Mbps. | Same WAN context attributes as `IP WAN <n>`. | `aggregated-dashboard`, with health fallback fields where exposed. |
+| `Speed Test Latency WAN <n>` | Normal | Enabled when present | Last UniFi ISP speed-test latency in milliseconds. | Same WAN context attributes as `IP WAN <n>`. | `aggregated-dashboard`, with health fallback fields where exposed. |
+| `Speed Test Last Run WAN <n>` | Normal | Enabled when present | Timestamp of the last UniFi ISP speed test. | Same WAN context attributes as `IP WAN <n>`. | `aggregated-dashboard`, with health fallback fields where exposed. |
 
 ## Port Sensors
 
